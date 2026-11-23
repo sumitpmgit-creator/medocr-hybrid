@@ -28,8 +28,8 @@ describe('BUG-009: route (oral vs IV)', () => {
   });
   it('attribution: route present in OCR (as an alias) but wrong in the structured output blames structuring; severity critical', async () => {
     const image: StageData = { kind: 'image', image: { mimeType: 'image/png', base64: '' } };
-    const ocr: Stage = { id: 'paddleocr', name: 'p', kind: 'ocr', accepts: ['image'], run: async () => ({ stageId: 'paddleocr', stageKind: 'ocr', site: 'server_gpu', output: { kind: 'text', text: 'Inj Pantoprazole 40 mg I.V. OD' }, metrics: { latencyMs: 1, costUsd: 0, bytesSent: 0 } }) };
-    const llm: Stage = { id: 'qwen', name: 'q', kind: 'structure', accepts: ['text'], run: async (i) => ({ stageId: 'qwen', stageKind: 'structure', site: 'server_gpu', output: { kind: 'fields', doc: rx([{ name: 'Pantoprazole', strength: '40 mg', route: 'oral', frequency: 'OD' }]), text: i.kind === 'text' ? i.text : undefined }, metrics: { latencyMs: 1, costUsd: 0, bytesSent: 0 } }) };
+    const ocr: Stage = { id: 'paddleocr', name: 'p', kind: 'ocr', accepts: ['image'], meta: { runtime: 'local-oss' }, run: async () => ({ stageId: 'paddleocr', stageKind: 'ocr', site: 'server_gpu', output: { kind: 'text', text: 'Inj Pantoprazole 40 mg I.V. OD' }, metrics: { latencyMs: 1, costUsd: 0, bytesSent: 0 } }) };
+    const llm: Stage = { id: 'qwen', name: 'q', kind: 'structure', accepts: ['text'], meta: { runtime: 'local-oss' }, run: async (i) => ({ stageId: 'qwen', stageKind: 'structure', site: 'server_gpu', output: { kind: 'fields', doc: rx([{ name: 'Pantoprazole', strength: '40 mg', route: 'oral', frequency: 'OD' }]), text: i.kind === 'text' ? i.text : undefined }, metrics: { latencyMs: 1, costUsd: 0, bytesSent: 0 } }) };
     const run = await runPipeline({ id: 'paddle+qwen', name: 'x', stages: [ocr, llm] }, image, { docId: 'd' });
     const gold = rx([{ name: 'Pantoprazole', strength: '40 mg', route: 'intravenous', frequency: 'OD' }]);
     const a = attributeErrors(run, gold);

@@ -4,6 +4,11 @@ import {
   type Attribution, type ClinicalDoc, type FieldComparison, type Stage, type StageData,
 } from '../src/index.js';
 
+// Fixture stages are plain Stage objects that report site 'in_cloud' / bytesSent without declaring egress.
+// They test attribution/abort, not privacy, so they opt back into the old 'warn' behaviour explicitly.
+const LEGACY_FIXTURE = { undeclaredEgress: 'warn' as const };
+
+
 const image: StageData = { kind: 'image', image: { mimeType: 'image/png', base64: '' } };
 const m = { latencyMs: 1, costUsd: 0, bytesSent: 0 };
 const rx = (medications: ClinicalDoc['medications']): ClinicalDoc => ({ documentType: 'prescription', medications, labResults: [] });
@@ -16,13 +21,13 @@ const att = (c: Partial<FieldComparison>): Attribution => ({ stageId: 's', cause
 
 describe('error attribution to the earliest stage', () => {
   it('records a per-stage evidence trail', async () => {
-    const run = await runPipeline({ id: 'p', name: 'p', stages: [textStage('ocr', 'Tab Augmentin 625 mg BD'), fieldStage('llm', rx([{ name: 'Augmentin', strength: '625 mg', frequency: 'TDS' }]))] }, image, { docId: 'd' });
+    const run = await runPipeline({ id: 'p', name: 'p', stages: [textStage('ocr', 'Tab Augmentin 625 mg BD'), fieldStage('llm', rx([{ name: 'Augmentin', strength: '625 mg', frequency: 'TDS' }]))] }, image, { cloudSafety: LEGACY_FIXTURE, docId: 'd' });
     const [a] = attributeErrors(run, rx([{ name: 'Augmentin', strength: '625 mg', frequency: 'BD' }]));
     expect(a).toMatchObject({ stageId: 'llm', stageKind: 'structure', cause: 'structuring' });
     expect(a!.evidence).toEqual([{ stageId: 'ocr', stageKind: 'ocr', holds: true }, { stageId: 'llm', stageKind: 'structure', holds: false }]);
   });
   it('OCR misread digits: a dose magnitude error is blamed on OCR, and is critical', async () => {
-    const run = await runPipeline({ id: 'p', name: 'p', stages: [textStage('ocr', 'Tab Warfarin 50 mg OD'), fieldStage('llm', rx([{ name: 'Warfarin', strength: '50 mg', frequency: 'OD' }]))] }, image, { docId: 'd' });
+    const run = await runPipeline({ id: 'p', name: 'p', stages: [textStage('ocr', 'Tab Warfarin 50 mg OD'), fieldStage('llm', rx([{ name: 'Warfarin', strength: '50 mg', frequency: 'OD' }]))] }, image, { cloudSafety: LEGACY_FIXTURE, docId: 'd' });
     const a = attributeErrors(run, rx([{ name: 'Warfarin', strength: '5 mg', frequency: 'OD' }]));
     expect(a).toHaveLength(1);
     expect(a[0]).toMatchObject({ stageId: 'ocr', cause: 'misread' });
@@ -30,15 +35,15 @@ describe('error attribution to the earliest stage', () => {
   });
   it('a single ocr+structure stage is split by its own text: structuring vs misread', async () => {
     const gold = rx([{ name: 'Augmentin', frequency: 'BD' }]);
-    const r1 = await runPipeline({ id: 'p', name: 'p', stages: [both('qwen-vl', 'Augmentin BD', rx([{ name: 'Augmentin', frequency: 'TDS' }]))] }, image, { docId: 'd' });
+    const r1 = await runPipeline({ id: 'p', name: 'p', stages: [both('qwen-vl', 'Augmentin BD', rx([{ name: 'Augmentin', frequency: 'TDS' }]))] }, image, { cloudSafety: LEGACY_FIXTURE, docId: 'd' });
     expect(attributeErrors(r1, gold)[0]).toMatchObject({ stageId: 'qwen-vl', cause: 'structuring' });
-    const r2 = await runPipeline({ id: 'p', name: 'p', stages: [both('qwen-vl', 'Augmentin TDS', rx([{ name: 'Augmentin', frequency: 'TDS' }]))] }, image, { docId: 'd' });
+    const r2 = await runPipeline({ id: 'p', name: 'p', stages: [both('qwen-vl', 'Augmentin TDS', rx([{ name: 'Augmentin', frequency: 'TDS' }]))] }, image, { cloudSafety: LEGACY_FIXTURE, docId: 'd' });
     expect(attributeErrors(r2, gold)[0]).toMatchObject({ stageId: 'qwen-vl', cause: 'misread' });
   });
   it('an invented value is blamed on the stage that first emitted it (not always the first fields stage)', async () => {
     const good = rx([{ name: 'Augmentin', frequency: 'BD' }]);
     const withInvention = rx([{ name: 'Augmentin', frequency: 'BD' }, { name: 'Azithromycin', strength: '500 mg' }]);
-    const run = await runPipeline({ id: 'p', name: 'p', stages: [textStage('ocr', 'Augmentin BD'), fieldStage('nano', good), fieldStage('cloud', withInvention, 'verify')] }, image, { docId: 'd' });
+    const run = await runPipeline({ id: 'p', name: 'p', stages: [textStage('ocr', 'Augmentin BD'), fieldStage('nano', good), fieldStage('cloud', withInvention, 'verify')] }, image, { cloudSafety: LEGACY_FIXTURE, docId: 'd' });
     const a = attributeErrors(run, good);
     expect(a.length).toBeGreaterThan(0);
     expect(a.every((x) => x.stageId === 'cloud' && x.cause === 'unsupported_inference')).toBe(true);
@@ -91,7 +96,7 @@ describe('error register JSON export', () => {
   it('is deterministic plain JSON with rules, summary and errors', async () => {
     const gold = lab([{ test: 'Haemoglobin', value: '12.5', unit: 'g/dL' }, { test: 'WBC', value: '7200', unit: '/cumm' }]);
     const pred = lab([{ test: 'Haemoglobin', value: '1.25', unit: 'g/dL' }]);
-    const run = await runPipeline({ id: 'p', name: 'p', stages: [textStage('ocr', 'Haemoglobin 1.25 g/dL'), fieldStage('llm', pred)] }, image, { docId: 'd1', runId: 'r1' });
+    const run = await runPipeline({ id: 'p', name: 'p', stages: [textStage('ocr', 'Haemoglobin 1.25 g/dL'), fieldStage('llm', pred)] }, image, { cloudSafety: LEGACY_FIXTURE, docId: 'd1', runId: 'r1' });
     const reg = new ErrorRegister();
     reg.record({ runId: 'r1', pipelineId: 'p', docId: 'd1' }, attributeErrors(run, gold), 6);
     const j = reg.toJSON();

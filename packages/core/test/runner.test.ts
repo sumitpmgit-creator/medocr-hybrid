@@ -133,7 +133,7 @@ describe('runPipelineResumable', () => {
 
   it('a StageResult.error (not thrown) is a failure too, and is retried', async () => {
     let n = 0;
-    const s: Stage = { id: 'soft', name: 's', kind: 'ocr', accepts: ['image'], run: async () => ({ stageId: 'soft', stageKind: 'ocr', site: 'on_device', output: { kind: 'text', text: '' }, metrics: { latencyMs: 1, costUsd: 0, bytesSent: 0 }, ...(n++ === 0 ? { error: 'nano unavailable' } : {}) }) };
+    const s: Stage = { id: 'soft', name: 's', kind: 'ocr', accepts: ['image'], meta: { runtime: 'device' }, run: async () => ({ stageId: 'soft', stageKind: 'ocr', site: 'on_device', output: { kind: 'text', text: '' }, metrics: { latencyMs: 1, costUsd: 0, bytesSent: 0 }, ...(n++ === 0 ? { error: 'nano unavailable' } : {}) }) };
     const r = await runPipelineResumable({ id: 'p', name: 'p', stages: [s] }, image, { docId: 'd', retries: 1 });
     expect(r.failed).toBe(false);
     expect(r.record.stages[0]!.attempts[0]!.error).toBe('nano unavailable');
@@ -142,7 +142,7 @@ describe('runPipelineResumable', () => {
   it('aborts: no retry, not checkpointed, later stages skipped; a hanging stage cannot block', async () => {
     const store = new MemoryCheckpointStore();
     const ac = new AbortController();
-    const hang: Stage = { id: 'hang', name: 'h', kind: 'ocr', accepts: ['image'], run: () => new Promise(() => { setTimeout(() => ac.abort(), 5); }) };
+    const hang: Stage = { id: 'hang', name: 'h', kind: 'ocr', accepts: ['image'], meta: { runtime: 'device' }, run: () => new Promise(() => { setTimeout(() => ac.abort(), 5); }) };
     const llm = counted('llm', 'structure');
     const r = await runPipelineResumable({ id: 'p', name: 'p', stages: [hang, llm.stage] }, image, { docId: 'd', store, signal: ac.signal, retries: 3 });
     expect(r.failed).toBe(true);
@@ -155,7 +155,7 @@ describe('runPipelineResumable', () => {
 
   it('per-stage timeout fails the attempt with timedOut and allows retry', async () => {
     let n = 0;
-    const slow: Stage = { id: 'slow', name: 's', kind: 'ocr', accepts: ['image'], run: () => (n++ === 0 ? new Promise(() => {}) : Promise.resolve({ stageId: 'slow', stageKind: 'ocr', site: 'server_gpu', output: { kind: 'text', text: 'ok' }, metrics: { latencyMs: 1, costUsd: 0, bytesSent: 0 } })) };
+    const slow: Stage = { id: 'slow', name: 's', kind: 'ocr', accepts: ['image'], meta: { runtime: 'local-oss' }, run: () => (n++ === 0 ? new Promise(() => {}) : Promise.resolve({ stageId: 'slow', stageKind: 'ocr', site: 'server_gpu', output: { kind: 'text', text: 'ok' }, metrics: { latencyMs: 1, costUsd: 0, bytesSent: 0 } })) };
     const r = await runPipelineResumable({ id: 'p', name: 'p', stages: [slow] }, image, { docId: 'd', timeoutMs: 10, retries: 1 });
     expect(r.failed).toBe(false);
     expect(r.record.stages[0]!.attempts[0]).toMatchObject({ timedOut: true });
@@ -171,7 +171,7 @@ describe('runPipelineResumable', () => {
   });
 
   it('non-serialisable stage output is rejected', async () => {
-    const s: Stage = { id: 'bad', name: 'b', kind: 'ocr', accepts: ['image'], run: async () => ({ stageId: 'bad', stageKind: 'ocr', site: 'local_code', output: { kind: 'text', text: 'x' }, metrics: { latencyMs: Number.POSITIVE_INFINITY, costUsd: 0, bytesSent: 0 } }) };
+    const s: Stage = { id: 'bad', name: 'b', kind: 'ocr', accepts: ['image'], meta: { runtime: 'code' }, run: async () => ({ stageId: 'bad', stageKind: 'ocr', site: 'local_code', output: { kind: 'text', text: 'x' }, metrics: { latencyMs: Number.POSITIVE_INFINITY, costUsd: 0, bytesSent: 0 } }) };
     const r = await runPipelineResumable({ id: 'p', name: 'p', stages: [s] }, image, { docId: 'd' });
     expect(r.failed).toBe(true);
     expect(r.error).toMatch(/non-finite/);
