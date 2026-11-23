@@ -1,0 +1,5 @@
+# Harness self-test output (mock pipeline). Not benchmark results; keep out of the public repo.
+results/selftest/
+# Never commit caches or browser profiles (they live outside the tree by default).
+web/vite-cache/
+chrome-profile/

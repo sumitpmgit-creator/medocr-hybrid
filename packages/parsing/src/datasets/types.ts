@@ -2,12 +2,15 @@
 /**
  * Manifest types for imported evaluation documents.
  *
- * Field names follow the "Minimum imported-document manifest" in SoalTech
- * spec section 6. Provenance fields required by the MedOCR Hybrid brief
- * (source URL, license, pinned version) are included alongside those names.
+ * Canonical field names follow the "Minimum imported-document manifest" in
+ * SoalTech spec section 6 (snake_case). The writer also emits camelCase
+ * aliases that match packages/core DatasetItem (id, datasetVersion,
+ * imagePath, documentType, referenceText) so this format can describe the
+ * existing datasets/amr/manifest.jsonl without rewriting it.
  *
- * reference_type uses the short names from the spec example ("rubric")
- * rather than the lettered quality labels (A–E).
+ * reference_type uses short names. EkaCare is recorded as
+ * "no_transcription" (no official transcription is published; the set is
+ * also gated on Hugging Face).
  */
 
 export const REFERENCE_TYPES = [
@@ -15,6 +18,7 @@ export const REFERENCE_TYPES = [
   "transcription",
   "rubric",
   "machine",
+  "no_transcription",
   "none",
 ] as const;
 
@@ -22,6 +26,9 @@ export type ReferenceType = (typeof REFERENCE_TYPES)[number];
 
 export const LICENSE_STATUSES = ["reviewed", "unknown"] as const;
 export type LicenseStatus = (typeof LICENSE_STATUSES)[number];
+
+export const ACCESS_STATUSES = ["public", "gated"] as const;
+export type AccessStatus = (typeof ACCESS_STATUSES)[number];
 
 /** One document in the imported manifest (JSONL object). */
 export interface ManifestRecord {
@@ -40,7 +47,32 @@ export interface ManifestRecord {
   source_url: string;
   license: string;
   license_url: string | null;
+  /** English (or sole) transcription when reference_type is transcription. */
+  reference_text?: string;
+  reference_text_bangla?: string;
+  access?: AccessStatus;
   annotation_issues?: string[];
+  // DatasetItem aliases written alongside the spec fields (same values).
+  id?: string;
+  datasetVersion?: string;
+  imagePath?: string;
+  documentType?: string;
+  referenceText?: string;
+}
+
+/** packages/core DatasetItem shape used by scripts/import_datasets.py and datasets/amr. */
+export interface DatasetItemRecord {
+  id: string;
+  dataset: string;
+  datasetVersion: string;
+  license: string;
+  imagePath: string;
+  documentType?: string;
+  referenceText?: string;
+  rubrics?: unknown;
+  prompt?: string;
+  handwritten?: boolean;
+  note?: string;
 }
 
 export interface DatasetSourceMeta {
@@ -55,6 +87,7 @@ export interface DatasetSourceMeta {
   license_confirmed_from: string[];
   reference_type: ReferenceType;
   expected_records: number | null;
+  access: AccessStatus;
   notes: string[];
 }
 
@@ -77,9 +110,10 @@ export interface ManifestMetadata {
   sources: Array<
     DatasetSourceMeta & {
       imported_records: number;
-      download_status: "ok" | "blocked" | "not_attempted" | "local";
+      download_status: "ok" | "blocked" | "gated" | "not_attempted" | "local" | "external";
       download_blocker: string | null;
       file_sha256?: string;
+      manifest_path?: string;
     }
   >;
   warnings: ImportWarning[];

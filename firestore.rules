@@ -7,19 +7,21 @@ rules_version = '2';
 // See infra/setup-steps.md. Rules only see request.auth; they cannot enforce
 // App Check tokens.
 //
-// Path and payload as of 23 Nov 2026:
-//   apps/web/src/firebase.ts writes addDoc(users/{uid}/runs, summary + createdAt)
-//   apps/web/src/main.ts summary fields:
-//     pipelineId, cer, wer, fieldF1, latencyMs, bytesSent, costUsd, failed
-// Images, transcripts, and raw PII must never be stored (PRD §7).
-// users/{uid}/results is reserved for de-identified structured output (PRD);
-// the web app does not write it yet.
+// Decision: Firestore stores metrics only. No results text (no medications,
+// lab values, transcripts, or structured clinical JSON). Images and raw PII
+// stay forbidden. The only writable path is users/{uid}/runs/{runId}, as
+// written by apps/web/src/firebase.ts (saveRunSummary) and apps/web/src/main.ts:
+//   pipelineId, cer, wer, fieldF1, latencyMs, bytesSent, costUsd, failed,
+//   createdAt (serverTimestamp).
+// users/{uid}/results and every other path fall under deny-by-default.
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() {
-      return request.auth != null && request.auth.uid is string && request.auth.uid.size() > 0;
+      return request.auth != null
+        && request.auth.uid is string
+        && request.auth.uid.size() > 0;
     }
 
     function isUser(uid) {
@@ -28,10 +30,6 @@ service cloud.firestore {
 
     function strMax(v, n) {
       return v is string && v.size() <= n;
-    }
-
-    function optStrMax(data, key, n) {
-      return !(key in data) || data[key] == null || strMax(data[key], n);
     }
 
     function nonNeg(v) {
@@ -47,145 +45,26 @@ service cloud.firestore {
       return v == null || (v is number && v >= 0 && v <= 1);
     }
 
-    function documentTypeOk(v) {
-      return v in ['prescription', 'lab_report', 'discharge_summary', 'other'];
-    }
-
     function noForbiddenKeys(data) {
       return !data.keys().hasAny([
         'image', 'images', 'base64', 'photo', 'pdf', 'mimeType',
         'raw', 'rawText', 'transcript', 'ocrText', 'pageText',
         'pii', 'patientName', 'dateOfBirth', 'dob', 'phone',
-        'email', 'address', 'aadhaar', 'abha', 'mrn', 'uhid'
+        'email', 'address', 'aadhaar', 'abha', 'mrn', 'uhid',
+        'medications', 'labResults', 'abstentions', 'readingText',
+        'disagreements', 'humanDecisions', 'documentType'
       ]);
     }
 
     function runKeysAllowed(data) {
       return data.keys().hasOnly([
-        'createdAt',
-        'pipelineId',
-        'cer',
-        'wer',
-        'fieldF1',
-        'latencyMs',
-        'bytesSent',
-        'costUsd',
-        'failed',
-        'runId',
-        'docId',
-        'documentType',
-        'error',
-        'stepSummaries',
-        'sites',
-        'toCloudCount',
-        'humanConfirmCount',
-        'acceptOnDeviceThreshold',
-        'humanReviewThreshold',
-        'medications',
-        'labResults',
-        'abstentions',
-        'disagreements',
-        'humanDecisions',
-        'datasetId',
-        'datasetLicense',
-        'passesSafetyScreen'
+        'createdAt', 'pipelineId', 'cer', 'wer', 'fieldF1',
+        'latencyMs', 'bytesSent', 'costUsd', 'failed',
+        'runId', 'docId', 'error',
+        'stepSummaries', 'sites', 'toCloudCount', 'humanConfirmCount',
+        'acceptOnDeviceThreshold', 'humanReviewThreshold',
+        'datasetId', 'datasetLicense', 'passesSafetyScreen'
       ]);
-    }
-
-    function resultKeysAllowed(data) {
-      return data.keys().hasOnly([
-        'createdAt',
-        'runId',
-        'docId',
-        'pipelineId',
-        'documentType',
-        'medications',
-        'labResults',
-        'abstentions',
-        'disagreements',
-        'humanDecisions',
-        'datasetId',
-        'datasetLicense'
-      ]);
-    }
-
-    function validMedication(m) {
-      return m is map
-        && noForbiddenKeys(m)
-        && m.keys().hasOnly([
-          'name', 'genericName', 'strength', 'dosageForm', 'dose', 'route',
-          'frequency', 'timing', 'duration', 'quantity', 'instructions',
-          'confidence', 'sourceText', 'decision', 'grounded'
-        ])
-        && strMax(m.name, 200)
-        && optStrMax(m, 'genericName', 200)
-        && optStrMax(m, 'strength', 80)
-        && optStrMax(m, 'dosageForm', 80)
-        && optStrMax(m, 'dose', 80)
-        && optStrMax(m, 'route', 80)
-        && optStrMax(m, 'frequency', 80)
-        && optStrMax(m, 'timing', 80)
-        && optStrMax(m, 'duration', 80)
-        && optStrMax(m, 'quantity', 80)
-        && optStrMax(m, 'instructions', 500)
-        && optStrMax(m, 'sourceText', 500)
-        && optStrMax(m, 'decision', 32)
-        && (!('confidence' in m) || unitIntervalOrNull(m.confidence))
-        && (!('grounded' in m) || m.grounded is bool);
-    }
-
-    function validLab(l) {
-      return l is map
-        && noForbiddenKeys(l)
-        && l.keys().hasOnly([
-          'test', 'value', 'unit', 'referenceRange', 'flag',
-          'confidence', 'sourceText', 'decision', 'grounded'
-        ])
-        && strMax(l.test, 200)
-        && strMax(l.value, 80)
-        && optStrMax(l, 'unit', 40)
-        && optStrMax(l, 'referenceRange', 80)
-        && optStrMax(l, 'sourceText', 500)
-        && optStrMax(l, 'decision', 32)
-        && (!('flag' in l) || l.flag == null || l.flag in ['high', 'low', 'normal', 'abnormal'])
-        && (!('confidence' in l) || unitIntervalOrNull(l.confidence))
-        && (!('grounded' in l) || l.grounded is bool);
-    }
-
-    function validClinical(data) {
-      return (!('medications' in data)
-          || (data.medications is list && data.medications.size() <= 80
-              && data.medications.all(m, validMedication(m))))
-        && (!('labResults' in data)
-          || (data.labResults is list && data.labResults.size() <= 200
-              && data.labResults.all(l, validLab(l))))
-        && (!('abstentions' in data)
-          || (data.abstentions is list && data.abstentions.size() <= 50
-              && data.abstentions.all(s, strMax(s, 500))))
-        && (!('disagreements' in data)
-          || (data.disagreements is list && data.disagreements.size() <= 80
-              && data.disagreements.all(s, s is string && s.size() <= 200 || s is map)))
-        && (!('humanDecisions' in data)
-          || (data.humanDecisions is list && data.humanDecisions.size() <= 80
-              && data.humanDecisions.all(h, h is map && noForbiddenKeys(h))));
-    }
-
-    function validStepSummaries(data) {
-      return !('stepSummaries' in data)
-        || (data.stepSummaries is list
-            && data.stepSummaries.size() <= 30
-            && data.stepSummaries.all(s,
-              s is map
-              && noForbiddenKeys(s)
-              && !s.keys().hasAny(['output', 'raw', 'image'])
-              && s.keys().hasOnly([
-                'stageId', 'stageKind', 'site', 'confidence',
-                'latencyMs', 'costUsd', 'bytesSent', 'error', 'notes'
-              ])
-              && strMax(s.stageId, 64)
-              && strMax(s.stageKind, 32)
-              && strMax(s.site, 32)
-            ));
     }
 
     function validRun(data) {
@@ -200,36 +79,19 @@ service cloud.firestore {
         && (!('cer' in data) || errorRateOrNull(data.cer))
         && (!('wer' in data) || errorRateOrNull(data.wer))
         && (!('fieldF1' in data) || unitIntervalOrNull(data.fieldF1))
-        && optStrMax(data, 'error', 2000)
-        && optStrMax(data, 'runId', 128)
-        && optStrMax(data, 'docId', 128)
-        && optStrMax(data, 'datasetId', 128)
-        && optStrMax(data, 'datasetLicense', 64)
-        && (!('documentType' in data) || documentTypeOk(data.documentType))
-        && (!('sites' in data) || (data.sites is list && data.sites.size() <= 20
-            && data.sites.all(s, strMax(s, 32))))
+        && (!('error' in data) || data.error == null || strMax(data.error, 2000))
+        && (!('runId' in data) || strMax(data.runId, 128))
+        && (!('docId' in data) || strMax(data.docId, 128))
+        && (!('datasetId' in data) || strMax(data.datasetId, 128))
+        && (!('datasetLicense' in data) || strMax(data.datasetLicense, 64))
+        && (!('sites' in data) || (data.sites is list && data.sites.size() <= 20))
+        && (!('stepSummaries' in data)
+          || (data.stepSummaries is list && data.stepSummaries.size() <= 30))
         && (!('toCloudCount' in data) || nonNeg(data.toCloudCount))
         && (!('humanConfirmCount' in data) || nonNeg(data.humanConfirmCount))
         && (!('acceptOnDeviceThreshold' in data) || unitIntervalOrNull(data.acceptOnDeviceThreshold))
         && (!('humanReviewThreshold' in data) || unitIntervalOrNull(data.humanReviewThreshold))
-        && (!('passesSafetyScreen' in data) || data.passesSafetyScreen == null || data.passesSafetyScreen is bool)
-        && validClinical(data)
-        && validStepSummaries(data);
-    }
-
-    function validResult(data) {
-      return resultKeysAllowed(data)
-        && noForbiddenKeys(data)
-        && data.createdAt is timestamp
-        && documentTypeOk(data.documentType)
-        && optStrMax(data, 'runId', 128)
-        && optStrMax(data, 'docId', 128)
-        && optStrMax(data, 'pipelineId', 64)
-        && optStrMax(data, 'datasetId', 128)
-        && optStrMax(data, 'datasetLicense', 64)
-        && 'medications' in data
-        && 'labResults' in data
-        && validClinical(data);
+        && (!('passesSafetyScreen' in data) || data.passesSafetyScreen == null || data.passesSafetyScreen is bool);
     }
 
     match /users/{uid} {
@@ -243,19 +105,6 @@ service cloud.firestore {
           && request.resource.data.createdAt == resource.data.createdAt;
         allow delete: if isUser(uid);
       }
-
-      match /results/{resultId} {
-        allow read: if isUser(uid);
-        allow create: if isUser(uid) && validResult(request.resource.data);
-        allow update: if isUser(uid)
-          && validResult(request.resource.data)
-          && request.resource.data.createdAt == resource.data.createdAt;
-        allow delete: if isUser(uid);
-      }
-    }
-
-    match /{document=**} {
-      allow read, write: if false;
     }
   }
 }

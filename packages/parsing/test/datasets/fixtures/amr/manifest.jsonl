@@ -1,0 +1,1 @@
+{"id": "amr/AMR_001", "dataset": "Nigeria-Health-data-OCR-pipeline/African-Medical-Records", "datasetVersion": "fa27d29dae4128ac45f035fd580928c84bec4e98", "license": "cc-by-4.0", "imagePath": "datasets/amr/images/AMR_001_HTR.png", "documentType": "clinical_note", "referenceText": "NURSING OBSERVATION CHART\nPatient name: E.J", "handwritten": true}

@@ -2,7 +2,10 @@
 import { LAB_VALUE_FIELDS, MEDICATION_VALUE_FIELDS, type NanoExtraction } from "./schema.js";
 
 /** Default cutoff: fields with confidence below this are sent to the cloud model. */
-export const DEFAULT_CLOUD_ROUTE_THRESHOLD = 0.7;
+/** Matches @med-ocr/core DEFAULT_THRESHOLDS.acceptOnDevice: fields below it leave the device. */
+export const DEFAULT_CLOUD_ROUTE_THRESHOLD = 0.85;
+/** Matches @med-ocr/core DEFAULT_THRESHOLDS.humanReview. */
+export const DEFAULT_HUMAN_REVIEW_THRESHOLD = 0.5;
 
 export interface RoutedField {
   /** JS-style path, e.g. medications[0].dose */
@@ -15,7 +18,7 @@ export interface RoutedField {
 }
 
 export interface RouteOptions {
-  /** Exclusive upper bound. Fields with confidence < threshold are routed. Default 0.7. */
+  /** Exclusive upper bound. Fields with confidence < threshold are routed. Default 0.85. */
   threshold?: number;
   /**
    * Also route value fields that Nano set to null (unreadable / absent), even

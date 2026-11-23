@@ -1,0 +1,26 @@
+[
+  {
+    "code": "filename_typo",
+    "message": "CSV row 176 filename \"0174,jpg\" repaired to \"0174.jpg\""
+  },
+  {
+    "code": "conflicting_annotations",
+    "message": "Image 0063 has 2 conflicting CSV transcriptions; both are stored, neither is discarded",
+    "document_id": "bmpd-1-0063"
+  },
+  {
+    "code": "conflicting_annotations",
+    "message": "Image 0185 has 2 conflicting CSV transcriptions; both are stored, neither is discarded",
+    "document_id": "bmpd-1-0185"
+  },
+  {
+    "code": "missing_annotation",
+    "message": "Image 0186.jpg has no CSV annotation",
+    "document_id": "bmpd-1-0186"
+  },
+  {
+    "code": "conflicting_annotations",
+    "message": "Image 0525 has 2 conflicting CSV transcriptions; both are stored, neither is discarded",
+    "document_id": "bmpd-1-0525"
+  }
+]

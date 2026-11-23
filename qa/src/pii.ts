@@ -48,6 +48,7 @@ export const PII_CASES: PiiCase[] = [
   { id: 'M2', title: 'UHID with site code', text: 'UHID-BLR-2024-000981', pii: [{ type: 'mrn', value: 'UHID-BLR-2024-000981' }], keep: [] },
   { id: 'M3', title: 'IP number with slash', text: 'IP No. 24/11873 Ward 3B', pii: [{ type: 'mrn', value: '24/11873' }], keep: [] },
   { id: 'M4', title: 'alphanumeric reg no', text: 'Reg#A1B2C3D4', pii: [{ type: 'mrn', value: 'A1B2C3D4' }], keep: [] },
+  { id: 'M6', title: 'hospital number with slashes (AMR dataset format)', text: 'Patient name: E.J\nHospital number: 2023/BF/057\nWard: Female medical ward', pii: [{ type: 'mrn', value: '2023/BF/057' }], keep: ['Female medical ward'] },
   { id: 'M5', title: 'PID glued', text: 'PatientID:PID0045678', pii: [{ type: 'mrn', value: 'PID0045678' }], keep: [] },
   // ---------- email ----------
   { id: 'E1', title: 'email', text: 'Email rajesh.kumar87@gmail.com', pii: [{ type: 'email', value: 'rajesh.kumar87@gmail.com' }], keep: [] },
@@ -108,7 +109,7 @@ export function payloadViews(payload: string): string[] {
       try {
         const dec = Buffer.from(m, 'base64').toString('utf8');
         // keep only decodes that look like text
-        if (/^[\p{L}\p{N}\p{P}\p{Zs}\n\r\t]+$/u.test(dec)) views.add(dec);
+        if (dec.length && !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFD]/.test(dec)) views.add(dec);
       } catch { /* ignore */ }
     }
   }

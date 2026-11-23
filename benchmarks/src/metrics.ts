@@ -55,6 +55,9 @@ function normKey(k: string): string {
   return k.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
 }
 
+/** Model bookkeeping, not document content: never scored. */
+export const META_KEYS = new Set(['confidence', 'sourceText', 'bbox', 'abstentions', 'genericName']);
+
 /**
  * Flatten nested ground-truth / predicted JSON to path -> scalar.
  * Arrays of objects that all carry a string `name` are keyed by that name
@@ -66,10 +69,12 @@ export function flattenFields(v: unknown, prefix = '', out: Record<string, strin
     return out;
   }
   if (Array.isArray(v)) {
-    const named = v.length > 0 && v.every((e) => e && typeof e === 'object' && !Array.isArray(e) && typeof (e as any).name === 'string');
+    const keyOf = (e: any) => (typeof e?.name === 'string' ? 'name' : typeof e?.test === 'string' ? 'test' : null);
+    const k0 = v.length > 0 ? keyOf(v[0]) : null;
+    const named = k0 !== null && v.every((e) => e && typeof e === 'object' && !Array.isArray(e) && keyOf(e) === k0);
     v.forEach((e, i) => {
       if (named) {
-        const { name, ...rest } = e as any;
+        const { [k0!]: name, ...rest } = e as any;
         const p = `${prefix}[${normalizeValue(name)}]`;
         if (Object.keys(rest).length === 0) out[p] = normalizeValue(name);
         else flattenFields(rest, p, out);
@@ -81,6 +86,7 @@ export function flattenFields(v: unknown, prefix = '', out: Record<string, strin
   }
   if (typeof v === 'object') {
     for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (META_KEYS.has(k)) continue;
       flattenFields(val, prefix ? `${prefix}.${normKey(k)}` : normKey(k), out);
     }
     return out;
@@ -105,7 +111,9 @@ export function scoreFields(pred: unknown, gt: unknown): { correct: number; tota
   const p = flattenFields(pred ?? {});
   const fields: FieldResult[] = Object.entries(g).map(([path, expected]) => {
     const predicted = path in p ? p[path] : null;
-    return { path, expected, predicted, match: predicted !== null && predicted === expected };
+    // A ground-truth null/empty value is matched by an absent or empty prediction.
+    const match = expected === '' ? predicted === null || predicted === '' : predicted !== null && predicted === expected;
+    return { path, expected, predicted, match };
   });
   return { correct: fields.filter((f) => f.match).length, total: fields.length, fields };
 }

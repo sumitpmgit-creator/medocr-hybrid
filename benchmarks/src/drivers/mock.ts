@@ -40,7 +40,11 @@ export class MockDriver implements Driver {
     const t0 = performance.now();
     try {
       const useCloud = mode === 'cloud' || (mode === 'hybrid' && input.id.endsWith('2'));
-      if (useCloud) await fetch(`http://127.0.0.1:${this.port}/v1/generate`, { method: 'POST', body: input.bytes });
+      const ref = s.reference_text ?? '';
+      // Synthetic de-id that deliberately misses record IDs, so the leak check has something to find.
+      const deidText = ref.replace(/(Patient(?:['’]s)? name:\s*)[^\n]+/gi, '$1[NAME]');
+      if (mode === 'cloud') await fetch(`http://127.0.0.1:${this.port}/v1/generate`, { method: 'POST', body: JSON.stringify({ inlineData: Buffer.from(input.bytes).toString('base64'), text: 'read' }) });
+      else if (useCloud) await fetch(`http://127.0.0.1:${this.port}/v1/generate`, { method: 'POST', body: JSON.stringify({ contents: [{ parts: [{ text: deidText }] }] }) });
       const every = mode === 'device' ? 7 : useCloud ? 1000 : 7;
       const fields = JSON.parse(JSON.stringify(s.fields ?? {}));
       if (mode === 'device' && fields.patient_age) fields.patient_age = '99';
@@ -49,10 +53,16 @@ export class MockDriver implements Driver {
           text: corrupt(s.reference_text ?? '', every),
           fields,
           route: useCloud ? 'cloud' : 'device',
+          steps: [
+            { stageId: mode === 'cloud' ? 'cloud-read' : 'nano-read', stageKind: 'ocr', text: corrupt(ref, every) },
+            ...(mode === 'cloud' ? [] : [{ stageId: 'nano-deid', stageKind: 'deid', text: deidText }]),
+            { stageId: 'structure', stageKind: 'structure', text: mode === 'cloud' ? corrupt(ref, every) : deidText },
+          ],
           usage: useCloud ? [{ model: 'gemini-2.5-flash-lite', promptTokens: 1290, outputTokens: 400 }] : [],
         },
         wallMs: performance.now() - t0,
         egress: this.meter.snapshot(),
+        egressBodies: [...this.meter.bodies],
       };
     } finally {
       this.meter.uninstall();

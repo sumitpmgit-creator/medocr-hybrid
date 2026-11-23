@@ -45,6 +45,7 @@ export class BrowserDriver implements Driver {
   private proc?: ChildProcess;
   private cdp?: Cdp;
   private startErr?: Blocker;
+  private bodies: string[] = [];
   private egress = { requests: 0, bytes: 0, unmeasuredBodies: 0, hosts: {} as Record<string, number> };
   private chromeVersion = '';
   private nano = 'not probed';
@@ -59,11 +60,24 @@ export class BrowserDriver implements Driver {
     } finally { srv.close(); }
   }
 
-  private opts: { appUrl: string; chrome: string; profile: string; port: number; headless: boolean; appOwner: string };
+  private opts: { appUrl: string; chrome: string; profile: string; port: number; headless: boolean; appOwner: string; serve?: { cmd: string; args: string[]; cwd: string } };
+  private server?: ChildProcess;
+  private serverLog = '';
   constructor(opts: BrowserDriver['opts']) { this.opts = opts; }
 
   private async start(): Promise<void> {
     if (this.cdp || this.startErr) return;
+    if (this.opts.serve && !this.server) {
+      const { cmd, args, cwd } = this.opts.serve;
+      this.server = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+      this.server.stdout!.on('data', (d) => (this.serverLog += d));
+      this.server.stderr!.on('data', (d) => (this.serverLog += d));
+      this.server.on('error', (e) => (this.serverLog += `spawn error: ${e.message}`));
+      for (let i = 0; i < 60; i++) {
+        try { const r = await fetch(this.opts.appUrl); if (r.ok) break; } catch { /* not up yet */ }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    }
     mkdirSync(this.opts.profile, { recursive: true });
     const args = [`--remote-debugging-port=${this.opts.port}`, `--user-data-dir=${this.opts.profile}`, '--no-first-run', '--no-default-browser-check', 'about:blank'];
     if (this.opts.headless) args.unshift('--headless=new');
@@ -90,11 +104,15 @@ export class BrowserDriver implements Driver {
       if (r.hasPostData) {
         // Prefer exact byte counts: postDataEntries carry base64 bytes; getRequestPostData may be base64 too.
         if (Array.isArray(r.postDataEntries) && r.postDataEntries.every((e: any) => typeof e.bytes === 'string')) {
-          body = r.postDataEntries.reduce((t: number, e: any) => t + Buffer.from(e.bytes, 'base64').length, 0);
+          const buf = Buffer.concat(r.postDataEntries.map((e: any) => Buffer.from(e.bytes, 'base64')));
+          body = buf.length;
+          this.bodies.push(buf.toString('utf8'));
         } else {
           try {
             const pd = await this.cdp!.send('Network.getRequestPostData', { requestId: m.params.requestId });
-            body = pd.base64Encoded ? Buffer.from(pd.postData ?? '', 'base64').length : Buffer.byteLength(pd.postData ?? '');
+            const buf = pd.base64Encoded ? Buffer.from(pd.postData ?? '', 'base64') : Buffer.from(pd.postData ?? '', 'utf8');
+            body = buf.length;
+            this.bodies.push(buf.toString('utf8'));
           } catch { body = null; }
         }
       }
@@ -115,12 +133,13 @@ export class BrowserDriver implements Driver {
       this.startErr = { reason: `could not open ${this.opts.appUrl}: ${(e as Error).message}`, owner: this.opts.appOwner };
       return;
     }
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 80; i++) {
       const ready = await this.eval('typeof window.medocrBench === "object" && typeof window.medocrBench.run === "function"').catch(() => false);
       if (ready) return;
       await new Promise((r) => setTimeout(r, 250));
     }
-    this.startErr = { reason: `${this.opts.appUrl} did not expose window.medocrBench.run within 10 s (is the app dev server running and does it ship the bench page? see CONTRACT.md)`, owner: this.opts.appOwner };
+    const pageErr = await this.eval('document.body ? document.body.innerText.slice(0, 300) : ""').catch(() => '');
+    this.startErr = { reason: `${this.opts.appUrl} did not expose window.medocrBench.run within 20 s${this.serverLog ? ` (vite: ${this.serverLog.slice(-300).replace(/\s+/g, ' ')})` : ''}${pageErr ? ` (page: ${pageErr})` : ''}; see CONTRACT.md`, owner: this.opts.appOwner };
   }
 
   private async eval(expression: string): Promise<any> {
@@ -129,22 +148,33 @@ export class BrowserDriver implements Driver {
     return r.result.value;
   }
 
+  pipelinesSeen: Record<string, string> = {};
+
   async preflight(mode: Mode): Promise<Blocker[]> {
     await this.start();
     const out: Blocker[] = [];
-    if (mode !== 'cloud' && this.nano !== 'available') {
-      out.push({ reason: `Gemini Nano image input not available in this Chrome (${this.chromeVersion || this.opts.chrome}) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = "${this.nano}"`, owner: 'Sumit (needs an eligible machine) — see README hardware requirements' });
+    const caps = this.startErr ? null : await this.eval(`(async () => window.medocrBench.capabilities ? await window.medocrBench.capabilities() : null)()`).catch(() => null);
+    if (caps?.pipelines) this.pipelinesSeen = caps.pipelines;
+    // Device is needed by any pipeline with a Nano stage (cloud-only now also reads on-device).
+    const needDevice = caps?.needsDevice ? !!caps.needsDevice[mode] : mode !== 'cloud';
+    if (needDevice && this.nano !== 'available') {
+      out.push({ reason: `Gemini Nano image input not available in this Chrome (${this.chromeVersion || this.opts.chrome}) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = "${this.nano}"${mode === 'cloud' ? ' (the cloud-only pipeline now runs OCR on-device: ' + (caps?.pipelines?.cloud ?? '?') + ')' : ''}`, owner: 'Sumit (needs an eligible machine) — see README hardware requirements' });
     }
     if (this.startErr) return [...out, this.startErr];
-    const caps = await this.eval(`(async () => window.medocrBench.capabilities ? await window.medocrBench.capabilities() : null)()`).catch(() => null);
     if (mode !== 'device' && caps && caps.cloud === false) out.push({ reason: `app reports cloud unavailable${caps.cloudReason ? `: ${caps.cloudReason}` : ''}`, owner: 'Sumit (Firebase project config) / ' + this.opts.appOwner });
     return out;
+  }
+
+  async warmup(mode: Mode): Promise<void> {
+    await this.start();
+    await this.eval(`(async () => window.medocrBench.warmup ? await window.medocrBench.warmup(${JSON.stringify(mode)}) : true)()`);
   }
 
   async run(mode: Mode, input: { id: string; bytes: Uint8Array; mimeType: string }): Promise<SampleRun> {
     await this.start();
     const b64 = Buffer.from(input.bytes).toString('base64');
     this.egress = { requests: 0, bytes: 0, unmeasuredBodies: 0, hosts: {} };
+    this.bodies = [];
     const t0 = performance.now();
     const output = await this.eval(`(async () => {
       const bin = atob(${JSON.stringify(b64)}); const bytes = new Uint8Array(bin.length);
@@ -153,15 +183,16 @@ export class BrowserDriver implements Driver {
     })()`);
     const wallMs = performance.now() - t0; // includes base64 decode in page (~ms); documented in README
     await new Promise((r) => setTimeout(r, 50)); // let trailing Network events land
-    return { output, wallMs, egress: { ...this.egress, hosts: { ...this.egress.hosts } } };
+    return { output, wallMs, egress: { ...this.egress, hosts: { ...this.egress.hosts } }, egressBodies: [...this.bodies] };
   }
 
   async environment(): Promise<Record<string, unknown>> {
-    return { driver: 'browser', chrome: this.chromeVersion, appUrl: this.opts.appUrl, headless: this.opts.headless };
+    return { driver: 'browser', chrome: this.chromeVersion, appUrl: this.opts.appUrl, headless: this.opts.headless, pipelines: this.pipelinesSeen };
   }
 
   async close(): Promise<void> {
     this.cdp?.close();
     this.proc?.kill();
+    this.server?.kill();
   }
 }

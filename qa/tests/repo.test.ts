@@ -51,13 +51,15 @@ describe('REPO: install / scripts', () => {
     const file = cmd.split(/\s+/).find((t) => /\.(py|mjs|js|ts)$/.test(t));
     expect(file && existsSync(path.join(REPO, file)), `script: ${cmd}`).toBe(true);
   });
-  it('REPO-08 packages/core typechecks with its own tsconfig', () => {
-    const tsc = path.join(REPO, 'node_modules/typescript/bin/tsc');
-    let out = '';
-    try { execFileSync(process.execPath, [tsc, '--noEmit', '-p', pkgDir('packages/core')], { encoding: 'utf8', stdio: 'pipe' }); }
-    catch (e: any) { out = `${e.stdout ?? ''}${e.stderr ?? ''}`; }
-    expect(out).toBe('');
-  }, 60_000);
+  for (const p of workspacePkgs) {
+    it.skipIf(!existsSync(pkgDir(`${p}/tsconfig.json`)))(`REPO-08 ${p} typechecks with its own tsconfig (tsc --noEmit)`, () => {
+      const tsc = path.join(REPO, 'node_modules/typescript/bin/tsc');
+      let out = '';
+      try { execFileSync(process.execPath, [tsc, '--noEmit', '-p', pkgDir(p)], { encoding: 'utf8', stdio: 'pipe' }); }
+      catch (e: any) { out = `${e.stdout ?? ''}${e.stderr ?? ''}`.slice(0, 1500); }
+      expect(out).toBe('');
+    }, 90_000);
+  }
   it('REPO-09 core declares every bare-specifier package it imports', () => {
     const deps = { ...pj('packages/core').dependencies, ...pj('packages/core').devDependencies, ...pj('packages/core').peerDependencies };
     const imports = new Set<string>();
@@ -73,8 +75,17 @@ describe('REPO: install / scripts', () => {
 });
 
 describe('REPO: benchmark data', () => {
-  it('REPO-10 datasets/ekacare contains the 288 test images (or a manifest) for benchmark runs', () => {
-    const files = listFiles(pkgDir('datasets/ekacare'), /\.(png|jpe?g|webp|parquet|jsonl|json|csv)$/i);
+  it('REPO-11 datasets/amr manifest has referenceText ground truth and every imagePath exists (CER/WER source)', () => {
+    const f = pkgDir('datasets/amr/manifest.jsonl');
+    expect(existsSync(f), 'datasets/amr/manifest.jsonl missing').toBe(true);
+    const items = readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    expect(items.length).toBeGreaterThan(0);
+    const bad = items.filter((i: any) => !i.referenceText || !existsSync(path.join(REPO, i.imagePath))).map((i: any) => i.id);
+    expect(bad).toEqual([]);
+  });
+  it('REPO-10 datasets/ekacare contains test images (or parquet shards / an image manifest) for benchmark runs', () => {
+    // dataset.json / README are metadata only; the HF repo is gated and images need an accepted-terms account.
+    const files = listFiles(pkgDir('datasets/ekacare'), /\.(png|jpe?g|webp|parquet|jsonl)$/i);
     expect(files.length, `found: ${readdirSync(pkgDir('datasets/ekacare')).join(', ')}`).toBeGreaterThan(0);
   });
 });

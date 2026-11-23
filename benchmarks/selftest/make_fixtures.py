@@ -1,6 +1,7 @@
 # Generates SYNTHETIC self-test fixtures (fake documents, no real patient data).
 import json
 from PIL import Image, ImageDraw
+NAMES = {"st-01": "Zara Testova", "st-02": "Quill Fakename", "st-03": "Imaginary Person", "st-12": "Noone Real"}  # invented
 docs = [
   ("st-01", "lab_report", "CITY LAB Hemoglobin 13.5 g/dL Platelets 250000 /uL", {"patient_age": "42", "tests": [{"name": "Hemoglobin", "value": "13.5", "unit": "g/dL"}, {"name": "Platelets", "value": "250000", "unit": "/uL"}]}),
   ("st-02", "prescription", "Rx Paracetamol 500 mg twice daily for 5 days", {"patient_age": "31", "medications": [{"name": "Paracetamol", "dose": "500 mg", "frequency": "twice daily"}]}),
@@ -12,5 +13,5 @@ with open("fixtures/manifest.jsonl", "w") as f:
         img = Image.new("RGB", (640, 160), "white")
         ImageDraw.Draw(img).text((10, 60), text, fill="black")
         img.save(f"fixtures/images/{id_}.png")
-        f.write(json.dumps({"id": id_, "image": f"images/{id_}.png", "document_type": dt, "reference_text": text, "fields": fields, "synthetic": True}) + "\n")
+        f.write(json.dumps({"id": id_, "image": f"images/{id_}.png", "document_type": dt, "reference_text": f"Patient name: {NAMES[id_]}\nHospital No: 2099/ZZ/{id_[-2:]}\n" + text, "fields": fields, "synthetic": True}) + "\n")
 print("ok")

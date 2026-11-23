@@ -56,3 +56,11 @@ test('egress meter ignores loopback by default and counts bodies', () => {
   assert.ok(s.bytes > 1020);
   assert.deepEqual(Object.keys(s.hosts), ['firebasevertexai.googleapis.com']);
 });
+
+test('field scoring on core ClinicalDoc shape', () => {
+  const gt = { documentType: 'prescription', medications: [{ name: 'Cefuroxime', strength: '500mg', frequency: 'bd', route: null }], labResults: [{ test: 'Hb', value: '13.5', unit: 'g/dL' }] };
+  const pred = { documentType: 'prescription', medications: [{ name: 'cefuroxime', strength: '500mg', frequency: 'BD', confidence: 0.9, sourceText: 'x' }], labResults: [{ test: 'HB', value: '13.50', unit: 'g/dl' }], abstentions: ['y'] };
+  const r = scoreFields(pred, gt);
+  assert.equal(r.total, 6); // documentType, strength, frequency, route, value, unit
+  assert.equal(r.correct, 6);
+});

@@ -65,7 +65,7 @@ data class EntityMatch(
     val unmatchedPred: List<Int>,
 )
 
-fun <T> matchEntities(ref: List<T>, pred: List<T>, key: (T) -> String, minSim: Double = 0.7): EntityMatch {
+fun <T> matchEntities(ref: List<T>, pred: List<T>, minSim: Double = 0.7, key: (T) -> String): EntityMatch {
     val cands = mutableListOf<Triple<Double, Int, Int>>()
     ref.forEachIndexed { i, r ->
         pred.forEachIndexed { j, p ->

@@ -8,7 +8,8 @@
     "test": "pnpm -r --if-present test",
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
-    "import:ekacare": "python3 scripts/import_ekacare.py"
+    "import:ekacare": "python3 scripts/import_datasets.py ekacare",
+    "lint": "pnpm -r --if-present lint"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

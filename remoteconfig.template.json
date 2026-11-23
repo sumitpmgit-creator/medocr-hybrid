@@ -3,22 +3,17 @@
   "parameters": {
     "accept_on_device_threshold": {
       "defaultValue": { "value": "0.85" },
-      "description": "Used by the app. Key read in apps/web/src/firebase.ts (getNumber). Value matches packages/core/src/routing.ts DEFAULT_THRESHOLDS.acceptOnDevice. At or above this grounded confidence, accept the on-device field; otherwise send it to the cloud. Not a clinically validated operating point.",
+      "description": "Canonical threshold. Key read in apps/web/src/firebase.ts (getNumber). Value matches packages/core/src/routing.ts DEFAULT_THRESHOLDS.acceptOnDevice. At or above this grounded confidence, accept the on-device field; otherwise send it to the cloud. Not a clinically validated operating point.",
       "valueType": "NUMBER"
     },
     "human_review_threshold": {
       "defaultValue": { "value": "0.5" },
-      "description": "Used by the app. Key read in apps/web/src/firebase.ts (getNumber). Value matches packages/core/src/routing.ts DEFAULT_THRESHOLDS.humanReview. After a cloud check, confidence below this (or a device/cloud disagreement) goes to human confirm.",
-      "valueType": "NUMBER"
-    },
-    "cloud_route_threshold": {
-      "defaultValue": { "value": "0.7" },
-      "description": "PROPOSED: not wired in the web app yet. Matches packages/parsing/src/extraction/route.ts DEFAULT_CLOUD_ROUTE_THRESHOLD (fields with confidence below this are nominated for cloud assist). The PRD also mentioned 0.70 as a possible demo default. Add a getNumber('cloud_route_threshold') call in the app before relying on this parameter.",
+      "description": "Canonical threshold. Key read in apps/web/src/firebase.ts (getNumber). Value matches packages/core/src/routing.ts DEFAULT_THRESHOLDS.humanReview. After a cloud check, confidence below this (or a device/cloud disagreement) goes to human confirm.",
       "valueType": "NUMBER"
     },
     "cloud_model_name": {
       "defaultValue": { "value": "gemini-3.5-flash-lite" },
-      "description": "PROPOSED: not read from Remote Config yet. The web app currently pins CLOUD_MODEL = 'gemini-3.5-flash-lite' in apps/web/src/firebase.ts (and packages/core/src/cost.ts). Wiring this key is recommended so the model can be changed without a release. Keep a stable model name during judging.",
+      "description": "Not wired in the web app yet. The app currently pins CLOUD_MODEL = 'gemini-3.5-flash-lite' in apps/web/src/firebase.ts (and packages/core/src/cost.ts). Avenger still needs to read this key from Remote Config. Keep a stable model name during judging.",
       "valueType": "STRING"
     }
   }

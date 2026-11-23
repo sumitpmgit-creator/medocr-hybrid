@@ -2,7 +2,7 @@
 
 /** Placeholder tokens produced by deidentify(); finders must ignore these. */
 export const PLACEHOLDER_TOKEN =
-  /\[(?:NAME|ABHA|PHONE|ADDRESS|REG_NO|EMAIL|AADHAAR|UHID)\]/g;
+  /\[(?:NAME|ABHA_NUMBER|ABHA_ADDRESS|ABHA|PHONE|ADDRESS|REG_NO|EMAIL|AADHAAR|UHID|ID|PIN|DOB|DATE|PAN|VID)\]/g;
 
 /** Words that end a person-name capture. */
 export const NAME_STOP_WORDS = new Set(

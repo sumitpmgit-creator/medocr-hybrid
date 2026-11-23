@@ -18,6 +18,7 @@ declare module "node:fs" {
   export function readdirSync(path: string): string[];
   export function statSync(path: string): { isFile(): boolean; isDirectory(): boolean; size: number };
   export function copyFileSync(src: string, dest: string): void;
+  export function rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void;
   export function createReadStream(path: string): {
     on(event: "data", listener: (chunk: Uint8Array) => void): unknown;
     on(event: "error", listener: (err: Error) => void): unknown;
@@ -57,10 +58,11 @@ declare module "node:url" {
 }
 
 declare module "node:crypto" {
-  export function createHash(algorithm: string): {
-    update(data: string | Uint8Array): unknown;
+  interface Hash {
+    update(data: string | Uint8Array): Hash;
     digest(encoding: "hex"): string;
-  };
+  }
+  export function createHash(algorithm: string): Hash;
 }
 
 declare module "node:process" {
@@ -91,3 +93,7 @@ declare const process: {
   stderr: { write(s: string): void };
   stdout: { write(s: string): void };
 };
+
+declare module "node:zlib" {
+  export function inflateRawSync(data: Uint8Array): Uint8Array;
+}

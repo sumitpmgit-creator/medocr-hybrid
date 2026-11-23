@@ -1,0 +1,25 @@
+{
+  "dataset": "ekacare",
+  "title": "Medical Records Parsing Validation Set",
+  "source_url": "https://huggingface.co/datasets/ekacare/medical_records_parsing_validation_set",
+  "dataset_version": "dbfce4dd6ed5593e7804619ab9f3b2178504bfe9",
+  "license": "MIT",
+  "license_url": "https://opensource.org/licenses/MIT",
+  "license_confirmed_from": [
+    "Hugging Face datasets API cardData.license=mit and tags license:mit (https://huggingface.co/api/datasets/ekacare/medical_records_parsing_validation_set, sha dbfce4dd6ed5593e7804619ab9f3b2178504bfe9, retrieved 2026-11-23)",
+    "Dataset card License section: \"This dataset is released under the MIT License\" (also copied at datasets/ekacare/DATASET_CARD.md)"
+  ],
+  "reference_type": "no_transcription",
+  "access": "gated",
+  "expected_records": 288,
+  "imported_records": 0,
+  "download_status": "gated",
+  "download_blocker": "Hugging Face gated repository. Accept the terms at https://huggingface.co/datasets/ekacare/medical_records_parsing_validation_set and use scripts/import_datasets.py ekacare with HF_TOKEN if shards are needed. This importer does not bypass the gate. reference_type is no_transcription because no official transcriptions are published.",
+  "notes": [
+    "Hugging Face lists this dataset as gated (API field gated=auto). File downloads return HTTP 401 with x-error-code GatedRepo until a Hugging Face account accepts the terms. This importer does not attempt to bypass that gate.",
+    "EkaCare publishes images, prompts and evaluation rubrics, not official transcriptions or the underlying clinician-annotated structured JSON. Recorded reference_type is no_transcription.",
+    "License MIT is visible on the public dataset card and via the unauthenticated HF datasets API (cardData.license=mit, tags license:mit) even though the parquet shards themselves are gated.",
+    "HF API reports 288 test examples and download_size 24480000 bytes at sha dbfce4dd6ed5593e7804619ab9f3b2178504bfe9.",
+    "After accepting the terms, scripts/import_datasets.py ekacare (HF_TOKEN + pyarrow) can fetch shards; that script lives outside this package and is not invoked here."
+  ]
+}

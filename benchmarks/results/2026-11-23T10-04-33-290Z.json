@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "kind": "benchmark",
+  "started_at": "2026-11-23T10:04:33.290Z",
+  "finished_at": "2026-11-23T10:04:35.312Z",
+  "argv": [
+    "--driver",
+    "browser",
+    "--dataset",
+    "datasets/amr"
+  ],
+  "environment": {
+    "node": "v24.22.1",
+    "os": "Linux 6.12.113+ x64",
+    "cpus": 8,
+    "ram_gb": 15.6,
+    "driver": "browser",
+    "chrome": "Chrome/156.0.8078.47",
+    "appUrl": "http://localhost:5174/bench.html",
+    "headless": false,
+    "pipelines": {
+      "device": "On-device only (Nano): nano-read → nano-structure",
+      "cloud": "Cloud structure (gemini-3.5-flash-lite; OCR stays on-device): nano-read → deid → cloud-structure",
+      "hybrid": "Hybrid (Nano + de-identified cloud verify): nano-read → nano-structure → deid → cloud-verify"
+    }
+  },
+  "dataset": {
+    "path": "datasets/amr",
+    "manifest_sha256": "cfed1f27e52b5b2ac96ebf735db2a0e6580839c592df8a1fefccbcbae2a46067",
+    "n_samples": 3,
+    "limit": null,
+    "with_reference_text": 3,
+    "with_fields": 0
+  },
+  "pricing": {
+    "source": "https://ai.google.dev/gemini-api/docs/pricing (Gemini Developer API, the backend Firebase AI Logic's GoogleAIBackend bills through)",
+    "retrieved": "2026-11-23",
+    "tier": "Paid tier, Standard (non-batch), USD per 1M tokens, text/image input",
+    "notes": [
+      "Cost is computed only from token counts the pipeline reports (Firebase AI Logic response usageMetadata: promptTokenCount, candidatesTokenCount + thoughtsTokenCount). The harness never guesses tokens.",
+      "Output price includes thinking tokens, so pipelines must add thoughtsTokenCount into outputTokens.",
+      "On-device Gemini Nano (Chrome Prompt API) has no per-call API charge; the device's compute and battery are not costed.",
+      "Free tier is ignored: it has rate limits and Google may use free-tier data to improve its products, which rules it out for medical documents.",
+      "gemini-2.5-flash is deprecated; from 2026-12-01 its requests route to gemini-3.5-flash-lite and bill at that rate (per the same page).",
+      "If the pipeline uses the Vertex AI backend instead, replace these rates with Vertex AI pricing (https://cloud.google.com/vertex-ai/generative-ai/pricing)."
+    ],
+    "on_device_usd_per_call": 0,
+    "models": {
+      "gemini-2.5-flash-lite": {
+        "input_per_1m_usd": 0.1,
+        "output_per_1m_usd": 0.4
+      },
+      "gemini-2.5-flash": {
+        "input_per_1m_usd": 0.3,
+        "output_per_1m_usd": 2.5
+      },
+      "gemini-3.1-flash-lite": {
+        "input_per_1m_usd": 0.25,
+        "output_per_1m_usd": 1.5
+      },
+      "gemini-3.5-flash-lite": {
+        "input_per_1m_usd": 0.3,
+        "output_per_1m_usd": 2.5
+      },
+      "gemini-3-flash-preview": {
+        "input_per_1m_usd": 0.5,
+        "output_per_1m_usd": 3
+      }
+    }
+  },
+  "modes": {
+    "device": {
+      "status": "NOT RUN",
+      "blockers": [
+        {
+          "reason": "Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = \"unavailable\"",
+          "owner": "Sumit (needs an eligible machine) — see README hardware requirements"
+        }
+      ]
+    },
+    "cloud": {
+      "status": "NOT RUN",
+      "blockers": [
+        {
+          "reason": "Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = \"unavailable\" (the cloud-only pipeline now runs OCR on-device: Cloud structure (gemini-3.5-flash-lite; OCR stays on-device): nano-read → deid → cloud-structure)",
+          "owner": "Sumit (needs an eligible machine) — see README hardware requirements"
+        },
+        {
+          "reason": "app reports cloud unavailable: Firebase web config missing: apps/web/.env.local not filled (see apps/web/.env.example)",
+          "owner": "Sumit (Firebase project config) / Avenger (apps/web)"
+        }
+      ]
+    },
+    "hybrid": {
+      "status": "NOT RUN",
+      "blockers": [
+        {
+          "reason": "Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = \"unavailable\"",
+          "owner": "Sumit (needs an eligible machine) — see README hardware requirements"
+        },
+        {
+          "reason": "app reports cloud unavailable: Firebase web config missing: apps/web/.env.local not filled (see apps/web/.env.example)",
+          "owner": "Sumit (Firebase project config) / Avenger (apps/web)"
+        }
+      ]
+    }
+  }
+}

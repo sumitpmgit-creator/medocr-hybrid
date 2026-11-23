@@ -14,3 +14,11 @@ datasets/*/images/
 
 # browser profiles (cookies, caches) must never be committed
 **/chrome-profile/
+
+# raw dataset downloads (images, archives): never committed; re-download via the importer
+datasets/raw/
+apps/web/dist/
+.env*
+!**/.env.example
+.firebase/
+*-debug.log

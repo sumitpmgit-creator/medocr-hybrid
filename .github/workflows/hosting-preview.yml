@@ -1,0 +1,144 @@
+# Preview channel for pull requests. Skips cleanly when Firebase credentials
+# are missing. Posts the preview URL as a job summary (and a PR comment when
+# permitted).
+name: Hosting preview
+
+on:
+  pull_request:
+
+concurrency:
+  group: hosting-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+jobs:
+  preview:
+    name: firebase-hosting-preview
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Firebase credentials
+        id: creds
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_WIF_PROVIDER: ${{ secrets.FIREBASE_WIF_PROVIDER }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_SERVICE_ACCOUNT_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          if [ -n "$FIREBASE_PROJECT_ID" ] && [ -n "$FIREBASE_WIF_PROVIDER" ] && [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "method=wif" >> "$GITHUB_OUTPUT"
+          elif [ -n "$FIREBASE_PROJECT_ID" ] && [ -n "$FIREBASE_SERVICE_ACCOUNT_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "method=key" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping hosting preview: Firebase credentials are not configured."
+          fi
+
+      - name: Checkout
+        if: steps.creds.outputs.available == 'true'
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up pnpm
+        if: steps.creds.outputs.available == 'true'
+        uses: pnpm/action-setup@v6.1.1
+        with:
+          version: 10.34.6
+
+      - name: Set up Node.js
+        if: steps.creds.outputs.available == 'true'
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install workspace dependencies
+        if: steps.creds.outputs.available == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web app
+        if: steps.creds.outputs.available == 'true'
+        env:
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_RECAPTCHA_ENTERPRISE_SITE_KEY: ${{ vars.VITE_RECAPTCHA_ENTERPRISE_SITE_KEY }}
+          VITE_APPCHECK_DEBUG: "false"
+        run: pnpm --dir apps/web build
+
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        if: steps.creds.outputs.available == 'true' && steps.creds.outputs.method == 'wif'
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.FIREBASE_WIF_PROVIDER }}
+          service_account: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Authenticate to Google Cloud (service account key)
+        if: steps.creds.outputs.available == 'true' && steps.creds.outputs.method == 'key'
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+
+      - name: Install Firebase CLI
+        if: steps.creds.outputs.available == 'true'
+        run: pnpm install --frozen-lockfile --ignore-workspace --dir infra
+
+      - name: Deploy preview channel
+        if: steps.creds.outputs.available == 'true'
+        id: channel
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Channel names must be lowercase, digits, and hyphens.
+          CHANNEL="pr-${PR_NUMBER}"
+          set +e
+          OUT="$(pnpm --dir infra exec firebase hosting:channel:deploy "$CHANNEL" \
+            --project "$FIREBASE_PROJECT_ID" \
+            --expires 7d \
+            --non-interactive 2>&1)"
+          STATUS=$?
+          set -e
+          echo "$OUT"
+          URL="$(printf '%s\n' "$OUT" | grep -Eo 'https://[a-zA-Z0-9.-]+\.web\.app' | tail -n 1 || true)"
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          if [ -n "$URL" ]; then
+            echo "Preview URL: $URL" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$STATUS"
+
+      - name: Comment preview URL on the pull request
+        if: steps.creds.outputs.available == 'true' && steps.channel.outputs.url != ''
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const url = '${{ steps.channel.outputs.url }}';
+            const body = `Firebase Hosting preview: ${url} (expires in 7 days).`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const previous = comments.find((c) => c.body && c.body.startsWith('Firebase Hosting preview:'));
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: previous.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

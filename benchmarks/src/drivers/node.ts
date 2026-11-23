@@ -68,7 +68,7 @@ export class NodeDriver implements Driver {
     try {
       const output = await this.mod.runPipeline(input, { mode });
       const wallMs = performance.now() - t0;
-      return { output, wallMs, egress: this.meter.snapshot() };
+      return { output, wallMs, egress: this.meter.snapshot(), egressBodies: [...this.meter.bodies] };
     } finally {
       this.meter.uninstall();
     }

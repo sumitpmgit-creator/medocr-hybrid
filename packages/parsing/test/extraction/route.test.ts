@@ -19,7 +19,7 @@ const sample: NanoExtraction = {
       frequency: "1-0-1",
       frequencyConfidence: 0.4,
       duration: "5 days",
-      durationConfidence: 0.8,
+      durationConfidence: 0.9,
     },
   ],
   labResults: [
@@ -37,8 +37,8 @@ const sample: NanoExtraction = {
 };
 
 describe("fieldsBelowThreshold", () => {
-  it("routes only fields under the default 0.7 cutoff", () => {
-    expect(DEFAULT_CLOUD_ROUTE_THRESHOLD).toBe(0.7);
+  it("routes only fields under the default 0.85 cutoff", () => {
+    expect(DEFAULT_CLOUD_ROUTE_THRESHOLD).toBe(0.85);
     const routed = fieldsBelowThreshold(sample);
     expect(routed.map((f) => f.path)).toEqual([
       "medications[0].dose",
