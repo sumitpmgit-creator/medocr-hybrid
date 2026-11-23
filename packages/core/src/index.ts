@@ -7,6 +7,7 @@ export * from './checkpoint.js';
 export * from './runner.js';
 export * from './text-metrics.js';
 export * from './normalize.js';
+export * from './clinical-values.js';
 export * from './field-scorer.js';
 export * from './attribution.js';
 export * from './error-register.js';
