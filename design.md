@@ -58,7 +58,7 @@ interface StageResult {
 }
 ```
 
-- A **Pipeline** is `{ id, name, stages: Stage[] }`. `runPipeline()` keeps every intermediate output, stops at the first failure, and returns the partial trace, which makes it possible to rerun only failed runs later.
+- A **Pipeline** is `{ id, name, stages: Stage[] }`. `runPipeline()` keeps every intermediate output, stops at the first failure, and returns the partial trace. It now delegates to the resumable runner and also returns a run record (see §13).
 - `site` mirrors Firebase AI Logic's `response.inferenceSource` (`on_device` / `in_cloud`), so the demo reports where each step actually ran, not where we intended it to run.
 - Adding PaddleOCR or Qwen later means writing an adapter that calls a server endpoint and returns a `StageResult`. Nothing else changes.
 
@@ -84,7 +84,7 @@ interface StageResult {
 - Also computed: omission rate, invention rate, and numeric accuracy (numbers reproduced exactly, including decimals and signs).
 
 **Benchmark B: clinical fields**, scored on the final `fields` output.
-- Entities are matched greedily by normalised name similarity (≥ 0.7). The scorer then compares each field pair.
+- Entities are matched by normalised name similarity (≥ 0.7), using an optimal (Hungarian) assignment rather than a greedy one (see §13). The scorer then compares each field pair.
 - Outcomes: correct, wrong, missing, or unsupported (a value with no reference).
 - Precision = correct / predicted fields. Recall = correct / expected fields. F1 is their harmonic mean. Exact match = recall after *permitted normalisation*: frequency abbreviations (BD → 1-0-1, TDS → 1-1-1, OD/HS/SOS…), strength and unit spelling (625MG = 625 mg, µg = mcg), and numbers (12.50 = 12.5). Source values are never rewritten.
 - A **formatting-only** difference (raw strings differ but the normalised values match) is logged as Minor.
@@ -104,10 +104,11 @@ For each non-correct field in the final output, the attribution walks the stage 
   - `structuring`: the text had it, but the structured field is wrong. This is SoalTech's PaddleOCR → Qwen case, and a unit test covers it.
   - `regression`: a later verify stage broke a value that was correct.
   - `unsupported_inference`: the value appears in no upstream text, i.e. a hallucination.
+  - `redacted`: the value was replaced by a de-identification placeholder (see §13). This is never counted as an OCR omission.
 
 The **register** (`ErrorRegister`) stores the stage, cause, entity, field, expected and actual values, error type (substitution, omission or insertion), severity, an optional bbox, and a crop reference. Severity follows spec section F:
-- **Critical**: wrong drug identity, strength, dose, frequency or route; wrong lab value or test.
-- **Major**: duration, timing or quantity; lab unit or flag; an invented lab row.
+- **Critical**: wrong drug identity (name or generic name), strength, dose, frequency or route; wrong lab value or test.
+- **Major**: duration, timing or quantity; lab unit or flag; an invented lab row; a *missing* lab test or value (see §13).
 - **Moderate**: other metadata.
 - **Minor**: formatting only.
 
@@ -201,8 +202,27 @@ Checked against the official docs (`firebase.google.com/docs/ai-logic/hybrid/web
 | Quota exhaustion during judging | Sprint 3 quota request by 25 Nov; App Check; batch only from the developer account |
 | Large bundle (pdf.js about 1.3 MB worker) | Lazy-load pdf.js after Day 4 |
 | Late start (7 days) | Feature freeze 27 Nov; Android is a stretch goal only |
-| Cost numbers | `packages/core/src/cost.ts` prices are **placeholders (0)**; fill them from the official pricing page before quoting |
+| Cost numbers | `packages/core/src/cost.ts` mirrors `benchmarks/pricing.json` (checked against ai.google.dev, 23 Nov); unknown models throw |
 
 ## 12. Deferred until after 1 Dec (interface already supports these)
 
 The open-source stages (PaddleOCR, Qwen3.5-4B/9B, Surya, docTR, Tesseract, DeepSeek-OCR-2) as server-side Stages; the hardware and cost dashboard; the human review log UI; rerunning failed runs only; ZIP export; Gujarati and Hindi sets (Sarvam, Nayana); TEDS for tables; bounding-box IoU; RxHandBD and Bilingual Prescriptions importers; EkaCare rubric judge.
+
+## 13. Core changes (Louis, 23 Nov 2026)
+
+These changes to `packages/core` depart from the original design and were accepted by Advisory. Details are in `packages/core/README.md`.
+
+- **`runPipeline` delegates to `runPipelineResumable`** (no store) and returns a `ResumableRun`: the old trace fields plus `record: RunRecord`, which holds per-stage status, rerun reason, attempts, timings, errors and privacy flags. The old call signature still works.
+- **`costUsd` throws `UnknownModelPriceError` on unknown models.** It used to return 0, which made cost tables look free. Use `priceFor(model)` to check whether a price exists without throwing. Thinking tokens are billed at the output rate.
+- **`similarity` is symmetric**: `1 − editDistance(a, b) / max(|a|, |b|)`, so `similarity(a, b) === similarity(b, a)`. This affects the 0.7 entity gate and the 0.85 "holds" threshold.
+- **`genericName` is scored** as a medication field and is **critical**, as part of drug identity.
+- **A missing lab test or value is major** (rule R08). A *wrong* lab test or value is still critical (R07). Severities come from the ordered, documented `SEVERITY_RULES` (R00–R11), and each register entry records the rule that decided it.
+- **`normalizeText` naming**: core has two `normalizeText` functions. The text-metrics one (CER/WER) keeps the name. Rachel's clinical one from `normalize.ts` is exported from the package index as `normalizeClinicalText`.
+- **Cloud egress guard** (BUG-005, on by default in both runners). Before a stage that declares egress (`meta.runtime === 'cloud'` or `meta.sendsDataOffDevice`) runs:
+  1. a raw image input is refused (`raw_image`);
+  2. a `deid` stage must have completed earlier (`no_deid_stage`);
+  3. every string in the payload must pass `cloudSafety.check`, which defaults to Rachel's `assertSafeForCloud`. Refusal messages name the identifier types and counts, never the text (`unsafe_text`);
+  4. any `image` attached to text or fields input is stripped.
+
+  A blocked stage does not run, and the run fails with status `blocked` and the reason. `cloudSafety.exempt: [stageId]` is explicit, recorded consent (for example, the cloud-only baseline). A stage that sends data without declaring egress (it reports `site: 'in_cloud'` or `bytesSent > 0`) cannot be gated in advance, so it is flagged as `undeclared_egress` in `record.privacyFlags`.
+- **Placeholder-aware attribution.** When a gold value appears as a de-identification placeholder (`[DATE]`, `[NAME]`, …) in a stage's text, the loss is attributed with cause `redacted` to the deid stage, or to the reading stage if it redacts inline (Nano's own redaction), never as an OCR misread. If the value is itself PHI (`deidentify(value)` redacts it), `expectedRedaction` is true and rule R00 makes the error minor, with type `redaction`. Over-redaction of clinical data (for example, a drug name turned into `[NAME]`) keeps its normal field severity.
