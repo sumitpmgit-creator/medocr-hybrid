@@ -18,7 +18,8 @@ import { CHECKPOINT_SCHEMA_VERSION, checkpointKey, type AttemptRecord, type Chec
 
 export const RUN_RECORD_SCHEMA_VERSION = 1;
 
-export type StageRunStatus = 'executed' | 'reused' | 'failed' | 'aborted' | 'skipped';
+/** timed_out = the last attempt hit `timeoutMs`; checkpointed as a failure, so a resumed run retries it. */
+export type StageRunStatus = 'executed' | 'reused' | 'failed' | 'timed_out' | 'aborted' | 'skipped';
 
 /** Why a stage was (re)executed instead of reused. */
 export type RerunReason = 'no_checkpoint' | 'previous_failure' | 'input_changed' | 'version_changed' | 'upstream_rerun' | 'forced' | 'no_store';
@@ -226,7 +227,7 @@ export async function runPipelineResumable(pipeline: Pipeline, input: StageData,
       const failed: StageResult = result ?? { stageId: stage.id, stageKind: stage.kind, site: 'local_code', output: current, metrics: { ...emptyMetrics(), latencyMs: durationMs }, error: err };
       steps.push(failed);
       totals = addMetrics(totals, failed.metrics);
-      records.push({ ...base, inputHash, status: aborted ? 'aborted' : 'failed', rerunReason: reason, attempts, durationMs, error: err });
+      records.push({ ...base, inputHash, status: aborted ? 'aborted' : attempts.at(-1)?.timedOut ? 'timed_out' : 'failed', rerunReason: reason, attempts, durationMs, error: err });
       if (store && !aborted) {
         await store.put({ schemaVersion: CHECKPOINT_SCHEMA_VERSION, key, pipelineId: pipeline.id, docId: opts.docId, stageIndex: index, stageId: stage.id, stageVersion: meta.version, inputHash, status: 'failed', result: toSerializable({ ...failed, error: err }), attempts, runId, finishedAt: clock().toISOString() });
       }
