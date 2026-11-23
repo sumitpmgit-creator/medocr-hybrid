@@ -7,7 +7,8 @@
  * stage outputs frequency "TDS" -> attributed to the structuring stage, not to OCR.
  */
 import type { ClinicalDoc, PipelineRun, StageResult } from './types.js';
-import { scoreFields, type FieldComparison } from './field-scorer.js';
+import { fieldValueKind, scoreFields, type FieldComparison } from './field-scorer.js';
+import { compareValues } from './clinical-values.js';
 import { fuzzyContains } from './text-metrics.js';
 
 export type AttributionCause =
@@ -26,13 +27,32 @@ export interface Attribution {
 function stageHolds(step: StageResult, c: FieldComparison): boolean | undefined {
   const o = step.output;
   if (c.expected === null) return undefined;
-  if (o.kind === 'text') return fuzzyContains(o.text, c.expected);
+  if (o.kind === 'text') return textHolds(o.text, c);
   if (o.kind === 'fields') {
     const ref = singleFieldDoc(c);
     const s = scoreFields(ref, o.doc).comparisons.find((x) => x.field === c.field && x.expected !== null);
     return s?.outcome === 'correct';
   }
   return undefined; // image stages carry no evidence
+}
+
+/**
+ * Does `text` contain the reference value, allowing the same permitted normalisation the scorer
+ * uses? Fuzzy substring first (OCR noise), then word n-grams compared by field kind, so OCR text
+ * "PO" holds a reference route "oral" and "BD" holds frequency "1-0-1".
+ */
+export function textHolds(text: string, c: Pick<FieldComparison, 'entityType' | 'field' | 'expected'>): boolean {
+  if (c.expected === null) return false;
+  if (fuzzyContains(text, c.expected)) return true;
+  const kind = fieldValueKind(c.entityType, c.field);
+  if (kind === 'text') return false;
+  const words = text.split(/[\s,;:()]+/u).filter(Boolean);
+  for (let n = 1; n <= 4; n++) {
+    for (let i = 0; i + n <= words.length; i++) {
+      if (compareValues(kind, c.expected, words.slice(i, i + n).join(' ')) !== 'mismatch') return true;
+    }
+  }
+  return false;
 }
 
 function singleFieldDoc(c: FieldComparison): ClinicalDoc {

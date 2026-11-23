@@ -116,7 +116,38 @@ export function rangesEqual(a: ReferenceRange, b: ReferenceRange, tol?: NumericT
 
 export type ValueMatch = 'exact' | 'normalized' | 'mismatch';
 
-export type FieldValueKind = 'name' | 'drug' | 'quantity' | 'frequency' | 'duration' | 'number' | 'unit' | 'range' | 'text';
+export type FieldValueKind = 'name' | 'drug' | 'quantity' | 'frequency' | 'duration' | 'route' | 'number' | 'unit' | 'range' | 'text';
+
+/**
+ * Route aliases. Interim, scorer-local table (normalize.ts has no route normaliser yet; flagged to
+ * Rachel). Oral vs IV etc. stay distinct: a wrong route is a critical medication error.
+ */
+const ROUTE: Record<string, string> = {
+  oral: 'oral', po: 'oral', 'per oral': 'oral', 'by mouth': 'oral', orally: 'oral', 'per os': 'oral',
+  iv: 'iv', intravenous: 'iv', intravenously: 'iv',
+  im: 'im', intramuscular: 'im', intramuscularly: 'im',
+  sc: 'sc', sq: 'sc', subcut: 'sc', subcutaneous: 'sc', subcutaneously: 'sc', 'sub cut': 'sc',
+  sl: 'sublingual', sublingual: 'sublingual',
+  topical: 'topical', 'local application': 'topical', 'for external use': 'topical', 'external use': 'topical', 'l a': 'topical',
+  inhaled: 'inhaled', inhalation: 'inhaled', inh: 'inhaled', 'by inhalation': 'inhaled', nebulised: 'inhaled', nebulized: 'inhaled', neb: 'inhaled',
+  pr: 'rectal', rectal: 'rectal', 'per rectum': 'rectal',
+  nasal: 'nasal', intranasal: 'nasal',
+  ophthalmic: 'ophthalmic', 'eye drops': 'ophthalmic', eye: 'ophthalmic',
+  otic: 'otic', 'ear drops': 'otic', ear: 'otic',
+  transdermal: 'transdermal', td: 'transdermal',
+};
+
+export function canonicalRoute(v?: string | null): string {
+  if (!v) return '';
+  const t = v.toLowerCase().replace(/[.]/g, ' ').replace(/\s+/g, ' ').trim();
+  return ROUTE[t] ?? ROUTE[t.replace(/\s/g, '')] ?? t;
+}
+
+/** All raw spellings that canonicalise to the same route as `v` (for evidence search in OCR text). */
+export function routeAliases(v?: string | null): string[] {
+  const c = canonicalRoute(v);
+  return c ? Object.keys(ROUTE).filter((k) => ROUTE[k] === c) : [];
+}
 
 export interface CompareOptions { tolerance?: NumericTolerance }
 
@@ -127,6 +158,7 @@ export function compareValues(kind: FieldValueKind, expected: string, actual: st
   switch (kind) {
     case 'name': return normalizeName(expected) === normalizeName(actual) ? 'normalized' : 'mismatch';
     case 'drug': return canonicalDrugName(expected) === canonicalDrugName(actual) ? 'normalized' : 'mismatch';
+    case 'route': return canonicalRoute(expected) === canonicalRoute(actual) ? 'normalized' : 'mismatch';
     case 'duration': return normalizeGeneric(normalizeDuration(expected)) === normalizeGeneric(normalizeDuration(actual)) ? 'normalized' : 'mismatch';
     case 'frequency': return normalizeFrequency(expected) === normalizeFrequency(actual) ? 'normalized' : 'mismatch';
     case 'unit': return canonicalUnit(expected) === canonicalUnit(actual) ? 'normalized' : 'mismatch';

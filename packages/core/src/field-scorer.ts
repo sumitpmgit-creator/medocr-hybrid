@@ -71,7 +71,7 @@ const MED_FIELDS: FieldSpec<Medication>[] = [
   { field: 'strength', norm: normalizeStrength, kind: 'quantity', critical: true, required: false },
   { field: 'dose', norm: normalizeGeneric, kind: 'quantity', critical: true, required: false },
   { field: 'frequency', norm: normalizeFrequency, kind: 'frequency', critical: true, required: false },
-  { field: 'route', norm: normalizeGeneric, kind: 'text', critical: true, required: false },
+  { field: 'route', norm: normalizeGeneric, kind: 'route', critical: true, required: false },
   { field: 'dosageForm', norm: normalizeGeneric, kind: 'text', critical: false, required: false },
   { field: 'timing', norm: normalizeGeneric, kind: 'text', critical: false, required: false },
   { field: 'duration', norm: normalizeGeneric, kind: 'duration', critical: false, required: false },
