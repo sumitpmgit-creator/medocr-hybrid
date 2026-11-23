@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 export * from './types.js';
 export * from './pipeline.js';
+export * from './hash.js';
+export * from './stage.js';
 export * from './text-metrics.js';
 export * from './normalize.js';
 export * from './field-scorer.js';
