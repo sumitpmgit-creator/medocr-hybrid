@@ -188,3 +188,62 @@ describe('additions (not used by the current field scorer)', () => {
     expect(med).toContain('5 d');
   });
 });
+
+// Moved from core clinical-values.ts (route table, reference ranges, grouped numbers).
+import * as N from '../src/normalize';
+import * as CV from '../src/clinical-values';
+
+describe('normalizeRoute', () => {
+  it('canonicalises spellings and abbreviations', () => {
+    expect(N.normalizeRoute('p.o.')).toBe('oral');
+    expect(N.normalizeRoute(' By mouth ')).toBe('oral');
+    expect(N.normalizeRoute('Intravenous')).toBe('iv');
+    expect(N.normalizeRoute('I.M.')).toBe('im');
+    expect(N.normalizeRoute('sub cut')).toBe('sc');
+    expect(N.normalizeRoute('S.C.')).toBe('sc');
+    expect(N.normalizeRoute('L.A.')).toBe('topical');
+    expect(N.normalizeRoute('neb')).toBe('inhaled');
+    expect(N.normalizeRoute('')).toBe('');
+    expect(N.normalizeRoute(null)).toBe('');
+  });
+  it('keeps clinically different routes distinct and passes unknown text through', () => {
+    expect(N.normalizeRoute('oral')).not.toBe(N.normalizeRoute('IV'));
+    expect(N.normalizeRoute('IM')).not.toBe(N.normalizeRoute('SC'));
+    expect(N.normalizeRoute('Buccal')).toBe('buccal');
+  });
+  it('routeAliases lists every spelling of the same route', () => {
+    expect(N.routeAliases('PO')).toEqual(expect.arrayContaining(['oral', 'po', 'by mouth']));
+    expect(N.routeAliases('PO')).not.toContain('iv');
+    expect(N.routeAliases('')).toEqual([]);
+  });
+});
+
+describe('parseReferenceRange', () => {
+  it('ranges, bounds and units', () => {
+    expect(N.parseReferenceRange('4.5-11.0')).toEqual({ low: 4.5, high: 11, lowInclusive: true, highInclusive: true });
+    expect(N.parseReferenceRange('13.0 – 17.0 gm/dL')).toMatchObject({ low: 13, high: 17, unit: 'g/dl' });
+    expect(N.parseReferenceRange('<5')).toEqual({ high: 5, lowInclusive: true, highInclusive: false });
+    expect(N.parseReferenceRange('≤ 5.0')).toEqual({ high: 5, lowInclusive: true, highInclusive: true });
+    expect(N.parseReferenceRange('up to 200 mg/dl')).toMatchObject({ high: 200, highInclusive: true, unit: 'mg/dl' });
+    expect(N.parseReferenceRange('>40 mg/dL')).toEqual({ low: 40, lowInclusive: false, highInclusive: true, unit: 'mg/dl' });
+    expect(N.parseReferenceRange('-2 to 2')).toMatchObject({ low: -2, high: 2 });
+  });
+  it('Western and Indian digit grouping', () => {
+    expect(N.parseReferenceRange('1,50,000 - 4,50,000 /cumm')).toMatchObject({ low: 150000, high: 450000 });
+    expect(N.parseReferenceRange('150,000-450,000')).toMatchObject({ low: 150000, high: 450000 });
+    expect(N.parseGroupedNumber('1,00,00,000')).toBe(10000000);
+    expect(N.parseGroupedNumber('1,5')).toBeUndefined();
+  });
+  it('rejects inverted or non-numeric ranges', () => {
+    expect(N.parseReferenceRange('11-4.5')).toBeUndefined();
+    expect(N.parseReferenceRange('see note')).toBeUndefined();
+    expect(N.parseReferenceRange(undefined)).toBeUndefined();
+  });
+});
+
+describe('deprecated clinical-values re-exports', () => {
+  it('behave exactly like the normalize.ts functions', () => {
+    for (const r of ['p.o.', 'IV', 'Buccal', '']) { expect(CV.canonicalRoute(r)).toBe(N.normalizeRoute(r)); expect(CV.routeAliases(r)).toEqual(N.routeAliases(r)); }
+    for (const r of ['4.5-11.0', '<5', '1,50,000 - 4,50,000', 'x']) expect(CV.parseReferenceRange(r)).toEqual(N.parseReferenceRange(r));
+  });
+});
