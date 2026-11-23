@@ -13,13 +13,14 @@ import type { Pipeline, PipelineRun, Stage, StageData, StageMetrics, StageResult
 import { emptyMetrics, newRunId } from './pipeline.js';
 import { describeStage } from './stage.js';
 import { NORMALIZATION_VERSION } from './normalize.js';
+import { CloudSafetyError, gateCloudStage, isUndeclaredEgress, type CloudSafetyDecision, type CloudSafetyPolicy } from './cloud-safety.js';
 import { assertSerializable, hashValue, toSerializable } from './hash.js';
 import { CHECKPOINT_SCHEMA_VERSION, checkpointKey, type AttemptRecord, type CheckpointRecord, type CheckpointStore } from './checkpoint.js';
 
 export const RUN_RECORD_SCHEMA_VERSION = 1;
 
 /** timed_out = the last attempt hit `timeoutMs`; checkpointed as a failure, so a resumed run retries it. */
-export type StageRunStatus = 'executed' | 'reused' | 'failed' | 'timed_out' | 'aborted' | 'skipped';
+export type StageRunStatus = 'executed' | 'reused' | 'failed' | 'timed_out' | 'aborted' | 'blocked' | 'skipped';
 
 /** Why a stage was (re)executed instead of reused. */
 export type RerunReason = 'no_checkpoint' | 'previous_failure' | 'input_changed' | 'version_changed' | 'upstream_rerun' | 'forced' | 'no_store';
@@ -38,6 +39,11 @@ export interface StageRunRecord {
   attempts: AttemptRecord[];
   durationMs: number;
   error?: string;
+  /** Cloud egress guard outcome (BUG-005); absent for stages that neither declare nor show egress */
+  cloudSafety?: CloudSafetyDecision;
+  blockedReason?: string;
+  /** StageData.image was removed before this egress stage */
+  imageStripped?: boolean;
 }
 
 export interface RunRecord {
@@ -56,6 +62,8 @@ export interface RunRecord {
   failed: boolean;
   aborted: boolean;
   error?: string;
+  /** Human-readable privacy flags, e.g. undeclared egress or exempted stages */
+  privacyFlags: string[];
 }
 
 export interface ResumableRun extends PipelineRun { record: RunRecord }
@@ -84,6 +92,8 @@ export interface ResumableRunOptions {
    * (reuse them if their input hash still matches, e.g. a rerun produced identical output).
    */
   downstream?: 'rerun' | 'hash';
+  /** Fail-closed cloud egress guard (BUG-005). On by default; see cloud-safety.ts. */
+  cloudSafety?: CloudSafetyPolicy;
 }
 
 function addMetrics(a: StageMetrics, b: StageMetrics): StageMetrics {
@@ -123,6 +133,8 @@ export async function runPipelineResumable(pipeline: Pipeline, input: StageData,
   let totals = emptyMetrics();
   let upstreamExecuted = false;
   let failure: { error: string; aborted: boolean } | undefined;
+  let deidCompleted = false;
+  const privacyFlags: string[] = [];
 
   for (let index = 0; index < pipeline.stages.length; index++) {
     const stage = pipeline.stages[index]!;
@@ -137,6 +149,24 @@ export async function runPipelineResumable(pipeline: Pipeline, input: StageData,
       failure = { error, aborted: false };
       continue;
     }
+
+    // ---- cloud egress guard (before hashing: the hash covers what the stage actually receives)
+    let gate: ReturnType<typeof gateCloudStage>;
+    try {
+      gate = gateCloudStage(stage, current, deidCompleted, opts.cloudSafety);
+    } catch (e) {
+      if (!(e instanceof CloudSafetyError)) throw e;
+      if (opts.cloudSafety?.throwOnBlock) throw e;
+      records.push({ ...base, status: 'blocked', attempts: [], durationMs: 0, error: e.message, cloudSafety: 'blocked', blockedReason: e.reason });
+      privacyFlags.push(`blocked ${stage.id}: ${e.reason}`);
+      failure = { error: e.message, aborted: false };
+      continue;
+    }
+    if (gate.decision === 'exempt') privacyFlags.push(`exempt ${stage.id}: received data without the cloud safety check`);
+    if (gate.decision === 'disabled') privacyFlags.push(`cloud safety disabled for ${stage.id}`);
+    const egress = gate.decision !== 'passed' || gate.imageStripped || stage.meta?.runtime === 'cloud' || stage.meta?.sendsDataOffDevice === true;
+    const safety = egress ? { cloudSafety: gate.decision, ...(gate.imageStripped ? { imageStripped: true } : {}) } : {};
+    current = gate.input;
 
     const inputHash = stageInputHash(stage, current, opts.config);
     const key = checkpointKey(pipeline.id, opts.docId, index, stage.id);
@@ -161,6 +191,7 @@ export async function runPipelineResumable(pipeline: Pipeline, input: StageData,
       steps.push(res);
       totals = addMetrics(totals, res.metrics);
       records.push({ ...base, inputHash, outputHash: prev.outputHash, status: 'reused', reusedFromRunId: prev.runId, attempts: [], durationMs: 0 });
+      if (stage.kind === 'deid') deidCompleted = true;
       current = res.output;
       continue;
     }
@@ -227,7 +258,7 @@ export async function runPipelineResumable(pipeline: Pipeline, input: StageData,
       const failed: StageResult = result ?? { stageId: stage.id, stageKind: stage.kind, site: 'local_code', output: current, metrics: { ...emptyMetrics(), latencyMs: durationMs }, error: err };
       steps.push(failed);
       totals = addMetrics(totals, failed.metrics);
-      records.push({ ...base, inputHash, status: aborted ? 'aborted' : attempts.at(-1)?.timedOut ? 'timed_out' : 'failed', rerunReason: reason, attempts, durationMs, error: err });
+      records.push({ ...base, inputHash, status: aborted ? 'aborted' : attempts.at(-1)?.timedOut ? 'timed_out' : 'failed', rerunReason: reason, attempts, durationMs, error: err, ...safety });
       if (store && !aborted) {
         await store.put({ schemaVersion: CHECKPOINT_SCHEMA_VERSION, key, pipelineId: pipeline.id, docId: opts.docId, stageIndex: index, stageId: stage.id, stageVersion: meta.version, inputHash, status: 'failed', result: toSerializable({ ...failed, error: err }), attempts, runId, finishedAt: clock().toISOString() });
       }
@@ -238,7 +269,13 @@ export async function runPipelineResumable(pipeline: Pipeline, input: StageData,
     const outputHash = hashValue(result.output);
     steps.push(result);
     totals = addMetrics(totals, result.metrics);
-    records.push({ ...base, inputHash, outputHash, status: 'executed', rerunReason: reason, attempts, durationMs });
+    let safetyRec: Partial<StageRunRecord> = safety;
+    if (isUndeclaredEgress(stage, result)) {
+      safetyRec = { cloudSafety: 'undeclared_egress' };
+      privacyFlags.push(`undeclared egress from ${stage.id} (site ${result.site}, ${result.metrics.bytesSent} bytes): declare meta.runtime 'cloud' so the guard can run first`);
+    }
+    if (stage.kind === 'deid') deidCompleted = true;
+    records.push({ ...base, inputHash, outputHash, status: 'executed', rerunReason: reason, attempts, durationMs, ...safetyRec });
     if (store) {
       await store.put({ schemaVersion: CHECKPOINT_SCHEMA_VERSION, key, pipelineId: pipeline.id, docId: opts.docId, stageIndex: index, stageId: stage.id, stageVersion: meta.version, inputHash, outputHash, status: 'completed', result, attempts, runId, finishedAt: clock().toISOString() });
     }
@@ -257,6 +294,7 @@ export async function runPipelineResumable(pipeline: Pipeline, input: StageData,
     failed: !!failure,
     aborted: failure?.aborted ?? false,
     ...(failure ? { error: failure.error } : {}),
+    privacyFlags,
   };
   return { runId, pipelineId: pipeline.id, docId: opts.docId, startedAt, steps, final: current, totals, failed: !!failure, ...(failure ? { error: failure.error } : {}), record };
 }

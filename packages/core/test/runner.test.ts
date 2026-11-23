@@ -12,7 +12,7 @@ function counted(id: string, kind: 'ocr' | 'structure' | 'verify', opts: { versi
   const calls = { n: 0 };
   let failsLeft = opts.failTimes ?? 0;
   const stage = defineStage({
-    id, version: opts.version ?? '1', kind, runtime: kind === 'ocr' ? 'local-oss' : 'cloud',
+    id, version: opts.version ?? '1', kind, runtime: 'local-oss', // cloud stages need a deid stage first (BUG-005, see bug-005 tests)
     inputs: kind === 'ocr' ? ['image'] : ['text', 'fields'],
     run: async (input) => {
       calls.n++;
@@ -44,7 +44,7 @@ describe('runPipelineResumable', () => {
     const ocr = counted('ocr', 'ocr');
     let llmBroken = true;
     const llmCalls = { n: 0 };
-    const llm: Stage = defineStage({ id: 'llm', version: '1', kind: 'structure', runtime: 'cloud', inputs: ['text'], run: async (i) => {
+    const llm: Stage = defineStage({ id: 'llm', version: '1', kind: 'structure', runtime: 'local-oss', inputs: ['text'], run: async (i) => {
       llmCalls.n++;
       if (llmBroken) throw new Error('quota exceeded');
       return { output: { kind: 'fields', doc, text: i.kind === 'text' ? i.text : undefined } };
@@ -111,7 +111,7 @@ describe('runPipelineResumable', () => {
 
   it('stage model/fingerprint metadata is part of the input hash', async () => {
     const store = new MemoryCheckpointStore();
-    const mk = (fp: string) => defineStage({ id: 's', version: '1', kind: 'ocr', runtime: 'cloud', inputs: ['image'], fingerprint: fp, run: async () => ({ output: { kind: 'text', text: 'x' } }) });
+    const mk = (fp: string) => defineStage({ id: 's', version: '1', kind: 'ocr', runtime: 'local-oss', inputs: ['image'], fingerprint: fp, run: async () => ({ output: { kind: 'text', text: 'x' } }) });
     await runPipelineResumable({ id: 'p', name: 'p', stages: [mk('prompt-v1')] }, image, { docId: 'd', store });
     const r = await runPipelineResumable({ id: 'p', name: 'p', stages: [mk('prompt-v2')] }, image, { docId: 'd', store });
     expect(r.record.stages[0]!.rerunReason).toBe('input_changed');

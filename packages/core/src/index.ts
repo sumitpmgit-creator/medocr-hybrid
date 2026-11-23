@@ -5,6 +5,7 @@ export * from './hash.js';
 export * from './stage.js';
 export * from './checkpoint.js';
 export * from './runner.js';
+export * from './cloud-safety.js';
 export * from './text-metrics.js';
 export * from './normalize.js';
 // Both text-metrics (CER/WER) and normalize (Rachel's clinical text normaliser) export normalizeText.
