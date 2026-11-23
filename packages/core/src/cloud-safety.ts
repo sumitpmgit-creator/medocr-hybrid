@@ -12,7 +12,11 @@
  * A stage may be exempted by id (explicit consent, e.g. a cloud-only baseline); that is recorded.
  *
  * Stages that do not declare egress cannot be gated in advance; if one reports site 'in_cloud' or
- * bytesSent > 0 the run record flags it as 'undeclared_egress'.
+ * bytesSent > 0 it is 'undeclared_egress'. Policy `undeclaredEgress`:
+ *  - 'warn' (current default): the run continues and record.privacyFlags says so;
+ *  - 'fail': the stage is recorded as blocked, its output is discarded (nothing downstream sees it,
+ *    no completed checkpoint is stored) and the run fails. The data has already left by then; 'fail'
+ *    makes the leak loud and stops it from propagating, it cannot undo it.
  */
 import type { Stage, StageData, StageResult } from './types.js';
 import { describeStage } from './stage.js';
@@ -21,7 +25,10 @@ import { assertSafeForCloud, UnsafeForCloudError } from './deid.js';
 /** Throws if `text` is not safe to send to the cloud. Must not include the offending values in its message. */
 export type CloudSafetyCheck = (text: string) => void;
 
-export type CloudSafetyBlockReason = 'no_deid_stage' | 'raw_image' | 'unsafe_text';
+export type CloudSafetyBlockReason = 'no_deid_stage' | 'raw_image' | 'unsafe_text' | 'undeclared_egress';
+
+export type UndeclaredEgressMode = 'warn' | 'fail';
+export const DEFAULT_UNDECLARED_EGRESS: UndeclaredEgressMode = 'warn';
 
 export class CloudSafetyError extends Error {
   constructor(readonly stageId: string, readonly reason: CloudSafetyBlockReason, detail: string) {
@@ -41,6 +48,18 @@ export interface CloudSafetyPolicy {
   stripImage?: boolean;
   /** Throw CloudSafetyError from the runner instead of returning a failed run (default false). */
   throwOnBlock?: boolean;
+  /**
+   * What to do when a stage that did not declare egress reports data leaving the device
+   * (site 'in_cloud' or bytesSent > 0). Default DEFAULT_UNDECLARED_EGRESS. Exempt stages and a
+   * disabled guard always only warn.
+   */
+  undeclaredEgress?: UndeclaredEgressMode;
+}
+
+/** Resolved undeclared-egress mode for a stage under a policy. */
+export function undeclaredEgressMode(stage: Stage, policy: CloudSafetyPolicy = {}): UndeclaredEgressMode {
+  if (policy.enabled === false || policy.exempt?.includes(stage.id)) return 'warn';
+  return policy.undeclaredEgress ?? DEFAULT_UNDECLARED_EGRESS;
 }
 
 export type CloudSafetyDecision = 'passed' | 'exempt' | 'disabled' | 'blocked' | 'undeclared_egress';
