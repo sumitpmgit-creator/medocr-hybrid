@@ -152,6 +152,90 @@ export function normalizeDuration(v?: string | null): string {
 }
 
 // ---------------------------------------------------------------------------
+// Numbers with digit grouping, route, reference range (moved from core clinical-values.ts)
+// ---------------------------------------------------------------------------
+
+// Western (1,000,000) and Indian (2,50,000 / 1,00,00,000) digit grouping, or no grouping.
+/** Number with optional Western or Indian digit grouping (internal; exported for clinical-values). */
+export const GROUPED_NUMBER = String.raw`[-+−]?(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})+,\d{3}|\d+)(?:\.\d+)?|[-+−]?\.\d+`;
+const GROUPED_NUMBER_RE = new RegExp(`^(?:${GROUPED_NUMBER})$`);
+
+/** Parse a bare number: '12.50', '1,000', '2,50,000', '−3', '.5'. Undefined if the string is not just a number. */
+export function parseGroupedNumber(v?: string | null): number | undefined {
+  if (v === null || v === undefined) return undefined;
+  const t = v.trim();
+  if (!GROUPED_NUMBER_RE.test(t)) return undefined;
+  const n = Number(t.replace(/,/g, '').replace(/−/g, '-'));
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * Route aliases. Oral vs IV etc. stay distinct: a wrong route is a critical medication error.
+ * (Moved from core clinical-values.ts canonicalRoute, unchanged.)
+ */
+const ROUTE: Record<string, string> = {
+  oral: 'oral', po: 'oral', 'per oral': 'oral', 'by mouth': 'oral', orally: 'oral', 'per os': 'oral',
+  iv: 'iv', intravenous: 'iv', intravenously: 'iv',
+  im: 'im', intramuscular: 'im', intramuscularly: 'im',
+  sc: 'sc', sq: 'sc', subcut: 'sc', subcutaneous: 'sc', subcutaneously: 'sc', 'sub cut': 'sc',
+  sl: 'sublingual', sublingual: 'sublingual',
+  topical: 'topical', 'local application': 'topical', 'for external use': 'topical', 'external use': 'topical', 'l a': 'topical',
+  inhaled: 'inhaled', inhalation: 'inhaled', inh: 'inhaled', 'by inhalation': 'inhaled', nebulised: 'inhaled', nebulized: 'inhaled', neb: 'inhaled',
+  pr: 'rectal', rectal: 'rectal', 'per rectum': 'rectal',
+  nasal: 'nasal', intranasal: 'nasal',
+  ophthalmic: 'ophthalmic', 'eye drops': 'ophthalmic', eye: 'ophthalmic',
+  otic: 'otic', 'ear drops': 'otic', ear: 'otic',
+  transdermal: 'transdermal', td: 'transdermal',
+};
+
+export function normalizeRoute(v?: string | null): string {
+  if (!v) return '';
+  const t = v.toLowerCase().replace(/[.]/g, ' ').replace(/\s+/g, ' ').trim();
+  return ROUTE[t] ?? ROUTE[t.replace(/\s/g, '')] ?? t;
+}
+
+/** All raw spellings that canonicalise to the same route as `v` (for evidence search in OCR text). */
+export function routeAliases(v?: string | null): string[] {
+  const c = normalizeRoute(v);
+  return c ? Object.keys(ROUTE).filter((k) => ROUTE[k] === c) : [];
+}
+
+export interface ReferenceRange {
+  low?: number;
+  high?: number;
+  lowInclusive: boolean;
+  highInclusive: boolean;
+  unit?: string;
+}
+
+/**
+ * Parse '4.5-11.0', '4.5 – 11.0 g/dL', '4.5 to 11', '<5', '< 5.0', '<=5', '≤5', '>40', '≥ 40',
+ * 'up to 5', 'less than 5', 'more than 40', '-2 to 2'. Undefined if unparseable.
+ */
+export function parseReferenceRange(v?: string | null): ReferenceRange | undefined {
+  if (!v) return undefined;
+  const t = v.trim().toLowerCase().replace(/−/g, '-');
+  const n = String.raw`(-?(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})+,\d{3}|\d+)(?:\.\d+)?|-?\.\d+)`;
+  const num = (x?: string) => parseGroupedNumber(x) ?? NaN; // grouping-aware (1,50,000)
+  const unitOf = (rest?: string) => { const u = normalizeStrength(normalizeUnit((rest ?? '').trim())); return u ? { unit: u } : {}; };
+  let m = new RegExp(`^${n}\\s*(?:-|–|—|to)\\s*${n}\\s*(.*)$`).exec(t);
+  if (m) {
+    const low = num(m[1]), high = num(m[2]);
+    if (low > high) return undefined;
+    return { low, high, lowInclusive: true, highInclusive: true, ...unitOf(m[3]) };
+  }
+  m = new RegExp(`^(<=|≤|=<|<|less than|below|up\\s*to|upto|>=|≥|=>|>|more than|greater than|above)\\s*${n}\\s*(.*)$`).exec(t);
+  if (m) {
+    const op = m[1]!.replace(/\s+/g, ' '), x = num(m[2]);
+    if (['<', 'less than', 'below'].includes(op)) return { high: x, lowInclusive: true, highInclusive: false, ...unitOf(m[3]) };
+    if (['<=', '≤', '=<'].includes(op) || op.startsWith('up')) return { high: x, lowInclusive: true, highInclusive: true, ...unitOf(m[3]) };
+    if (['>', 'more than', 'greater than', 'above'].includes(op)) return { low: x, lowInclusive: false, highInclusive: true, ...unitOf(m[3]) };
+    return { low: x, lowInclusive: true, highInclusive: true, ...unitOf(m[3]) };
+  }
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Drug aliases (SEED LIST — not complete) and fuzzy helper
 // ---------------------------------------------------------------------------
 

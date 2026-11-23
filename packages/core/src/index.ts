@@ -13,6 +13,8 @@ export * from './normalize.js';
 export { normalizeText } from './text-metrics.js';
 export { normalizeText as normalizeClinicalText } from './normalize.js';
 export * from './clinical-values.js';
+// Moved to normalize.ts; clinical-values keeps deprecated copies of these names for one release.
+export { parseReferenceRange, routeAliases } from './normalize.js';
 export * from './field-scorer.js';
 export * from './calibration.js';
 export * from './attribution.js';

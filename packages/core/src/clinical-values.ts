@@ -5,7 +5,16 @@
  * (numbers, quantities, reference ranges) and decides equality. Spec §7 rule: never normalise away
  * clinically significant differences (5 mg vs 50 mg, 0-0-1 vs 1-0-1, mg vs mcg).
  */
-import { normalizeDrugName, normalizeDuration, normalizeFrequency, normalizeGeneric, normalizeName, normalizeNumber, normalizeStrength, normalizeUnit, NORMALIZATION_VERSION } from './normalize.js';
+import { GROUPED_NUMBER, normalizeDrugName, normalizeDuration, normalizeFrequency, normalizeGeneric, normalizeName, normalizeNumber, normalizeRoute, normalizeStrength, normalizeUnit, NORMALIZATION_VERSION, parseGroupedNumber, parseReferenceRange as parseReferenceRangeImpl, routeAliases as routeAliasesImpl, type ReferenceRange } from './normalize.js';
+
+// Moved to normalize.ts (Rachel's file, the only copy). Deprecated re-exports, removed after one release.
+export type { ReferenceRange } from './normalize.js';
+/** @deprecated Moved to normalize.ts as `normalizeRoute`; this alias will be removed after one release. */
+export const canonicalRoute: (v?: string | null) => string = normalizeRoute;
+/** @deprecated Moved to normalize.ts (`routeAliases`); this re-export will be removed after one release. */
+export const routeAliases: (v?: string | null) => string[] = routeAliasesImpl;
+/** @deprecated Moved to normalize.ts (`parseReferenceRange`); import it from there. This re-export will be removed after one release. */
+export const parseReferenceRange: (v?: string | null) => ReferenceRange | undefined = parseReferenceRangeImpl;
 
 /**
  * Bump when any comparison rule below changes (spec: "explicit, versioned rules").
@@ -34,17 +43,9 @@ export interface NumericTolerance {
   rel?: number;
 }
 
-// Western (1,000,000) and Indian (2,50,000 / 1,00,00,000) digit grouping, or no grouping.
-const NUM = String.raw`[-+−]?(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})+,\d{3}|\d+)(?:\.\d+)?|[-+−]?\.\d+`;
-const NUM_RE = new RegExp(`^(?:${NUM})$`);
-
-/** Parse a bare number: '12.50', '1,000', '2,50,000', '−3', '.5'. Undefined if the string is not just a number. */
+/** Parse a bare number: '12.50', '1,000', '2,50,000' (Western or Indian grouping), '−3', '.5'. Undefined if the string is not just a number. */
 export function parseNumber(v?: string | null): number | undefined {
-  if (v === null || v === undefined) return undefined;
-  const t = v.trim();
-  if (!NUM_RE.test(t)) return undefined;
-  const n = Number(t.replace(/,/g, '').replace(/−/g, '-'));
-  return Number.isFinite(n) ? n : undefined;
+  return parseGroupedNumber(v);
 }
 
 export function numbersEqual(a: number, b: number, tol: NumericTolerance = {}): boolean {
@@ -63,46 +64,11 @@ export interface Quantity { value: number; unit: string; raw: string }
 /** '500 mg', '500MG', '0.5 g', '1,000 IU', '5 mg/5 ml'. Undefined when there is no leading number. */
 export function parseQuantity(v?: string | null): Quantity | undefined {
   if (!v) return undefined;
-  const m = new RegExp(`^\\s*(${NUM})\\s*(.*?)\\s*$`).exec(v);
+  const m = new RegExp(`^\\s*(${GROUPED_NUMBER})\\s*(.*?)\\s*$`).exec(v);
   if (!m) return undefined;
   const value = parseNumber(m[1]);
   if (value === undefined) return undefined;
   return { value, unit: canonicalUnit(m[2] ?? ''), raw: v };
-}
-
-export interface ReferenceRange {
-  low?: number;
-  high?: number;
-  lowInclusive: boolean;
-  highInclusive: boolean;
-  unit?: string;
-}
-
-/**
- * Parse '4.5-11.0', '4.5 – 11.0 g/dL', '4.5 to 11', '<5', '< 5.0', '<=5', '≤5', '>40', '≥ 40',
- * 'up to 5', 'less than 5', 'more than 40', '-2 to 2'. Undefined if unparseable.
- */
-export function parseReferenceRange(v?: string | null): ReferenceRange | undefined {
-  if (!v) return undefined;
-  const t = v.trim().toLowerCase().replace(/−/g, '-');
-  const n = String.raw`(-?(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})+,\d{3}|\d+)(?:\.\d+)?|-?\.\d+)`;
-  const num = (x?: string) => parseNumber(x) ?? NaN; // grouping-aware (1,50,000)
-  const unitOf = (rest?: string) => { const u = canonicalUnit((rest ?? '').trim()); return u ? { unit: u } : {}; };
-  let m = new RegExp(`^${n}\\s*(?:-|–|—|to)\\s*${n}\\s*(.*)$`).exec(t);
-  if (m) {
-    const low = num(m[1]), high = num(m[2]);
-    if (low > high) return undefined;
-    return { low, high, lowInclusive: true, highInclusive: true, ...unitOf(m[3]) };
-  }
-  m = new RegExp(`^(<=|≤|=<|<|less than|below|up\\s*to|upto|>=|≥|=>|>|more than|greater than|above)\\s*${n}\\s*(.*)$`).exec(t);
-  if (m) {
-    const op = m[1]!.replace(/\s+/g, ' '), x = num(m[2]);
-    if (['<', 'less than', 'below'].includes(op)) return { high: x, lowInclusive: true, highInclusive: false, ...unitOf(m[3]) };
-    if (['<=', '≤', '=<'].includes(op) || op.startsWith('up')) return { high: x, lowInclusive: true, highInclusive: true, ...unitOf(m[3]) };
-    if (['>', 'more than', 'greater than', 'above'].includes(op)) return { low: x, lowInclusive: false, highInclusive: true, ...unitOf(m[3]) };
-    return { low: x, lowInclusive: true, highInclusive: true, ...unitOf(m[3]) };
-  }
-  return undefined;
 }
 
 export function rangesEqual(a: ReferenceRange, b: ReferenceRange, tol?: NumericTolerance): boolean {
@@ -118,37 +84,6 @@ export type ValueMatch = 'exact' | 'normalized' | 'mismatch';
 
 export type FieldValueKind = 'name' | 'drug' | 'quantity' | 'frequency' | 'duration' | 'route' | 'number' | 'unit' | 'range' | 'text';
 
-/**
- * Route aliases. Interim, scorer-local table (normalize.ts has no route normaliser yet; flagged to
- * Rachel). Oral vs IV etc. stay distinct: a wrong route is a critical medication error.
- */
-const ROUTE: Record<string, string> = {
-  oral: 'oral', po: 'oral', 'per oral': 'oral', 'by mouth': 'oral', orally: 'oral', 'per os': 'oral',
-  iv: 'iv', intravenous: 'iv', intravenously: 'iv',
-  im: 'im', intramuscular: 'im', intramuscularly: 'im',
-  sc: 'sc', sq: 'sc', subcut: 'sc', subcutaneous: 'sc', subcutaneously: 'sc', 'sub cut': 'sc',
-  sl: 'sublingual', sublingual: 'sublingual',
-  topical: 'topical', 'local application': 'topical', 'for external use': 'topical', 'external use': 'topical', 'l a': 'topical',
-  inhaled: 'inhaled', inhalation: 'inhaled', inh: 'inhaled', 'by inhalation': 'inhaled', nebulised: 'inhaled', nebulized: 'inhaled', neb: 'inhaled',
-  pr: 'rectal', rectal: 'rectal', 'per rectum': 'rectal',
-  nasal: 'nasal', intranasal: 'nasal',
-  ophthalmic: 'ophthalmic', 'eye drops': 'ophthalmic', eye: 'ophthalmic',
-  otic: 'otic', 'ear drops': 'otic', ear: 'otic',
-  transdermal: 'transdermal', td: 'transdermal',
-};
-
-export function canonicalRoute(v?: string | null): string {
-  if (!v) return '';
-  const t = v.toLowerCase().replace(/[.]/g, ' ').replace(/\s+/g, ' ').trim();
-  return ROUTE[t] ?? ROUTE[t.replace(/\s/g, '')] ?? t;
-}
-
-/** All raw spellings that canonicalise to the same route as `v` (for evidence search in OCR text). */
-export function routeAliases(v?: string | null): string[] {
-  const c = canonicalRoute(v);
-  return c ? Object.keys(ROUTE).filter((k) => ROUTE[k] === c) : [];
-}
-
 export interface CompareOptions { tolerance?: NumericTolerance }
 
 /** Compare two raw values of a given kind. 'exact' = identical after trimming; 'normalized' = equal under the permitted rules. */
@@ -158,7 +93,7 @@ export function compareValues(kind: FieldValueKind, expected: string, actual: st
   switch (kind) {
     case 'name': return normalizeName(expected) === normalizeName(actual) ? 'normalized' : 'mismatch';
     case 'drug': return canonicalDrugName(expected) === canonicalDrugName(actual) ? 'normalized' : 'mismatch';
-    case 'route': return canonicalRoute(expected) === canonicalRoute(actual) ? 'normalized' : 'mismatch';
+    case 'route': return normalizeRoute(expected) === normalizeRoute(actual) ? 'normalized' : 'mismatch';
     case 'duration': return normalizeGeneric(normalizeDuration(expected)) === normalizeGeneric(normalizeDuration(actual)) ? 'normalized' : 'mismatch';
     case 'frequency': return normalizeFrequency(expected) === normalizeFrequency(actual) ? 'normalized' : 'mismatch';
     case 'unit': return canonicalUnit(expected) === canonicalUnit(actual) ? 'normalized' : 'mismatch';
@@ -173,7 +108,7 @@ export function compareValues(kind: FieldValueKind, expected: string, actual: st
       return normalizeStrength(expected) === normalizeStrength(actual) ? 'normalized' : 'mismatch';
     }
     case 'range': {
-      const a = parseReferenceRange(expected), b = parseReferenceRange(actual);
+      const a = parseReferenceRangeImpl(expected), b = parseReferenceRangeImpl(actual);
       if (a && b) return rangesEqual(a, b, tol) ? 'normalized' : 'mismatch';
       const s = (v: string) => v.replace(/\s+/g, '').replace(/[–—]/g, '-').toLowerCase();
       return s(expected) === s(actual) ? 'normalized' : 'mismatch';
