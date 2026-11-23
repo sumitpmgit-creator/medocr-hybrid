@@ -3,6 +3,8 @@ export * from './types.js';
 export * from './pipeline.js';
 export * from './hash.js';
 export * from './stage.js';
+export * from './checkpoint.js';
+export * from './runner.js';
 export * from './text-metrics.js';
 export * from './normalize.js';
 export * from './field-scorer.js';
