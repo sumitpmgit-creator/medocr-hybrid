@@ -844,6 +844,12 @@ function findSeedNames(text: string): PhiSpan[] {
 const MONTH =
   "(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)";
 
+/** Day and year required. Separators may be spaces, hyphens, slashes or dots. */
+const MONTH_NAME_DATE =
+  "\\d{1,2}(?:st|nd|rd|th)?(?:\\s*[/.\-]\\s*|\\s+)" + MONTH + "(?:\\s*[/.\-]\\s*|\\s*,?\\s+)\\d{2,4}" +
+  "|" +
+  MONTH + "(?:\\s*[/.\-]\\s*|\\s+)\\d{1,2}(?:st|nd|rd|th)?,?(?:\\s*[/.\-]\\s*|\\s+)\\d{2,4}";
+
 function isPlausibleNumericDate(s: string): boolean {
   const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (iso) {
@@ -869,7 +875,7 @@ function findDob(text: string): PhiSpan[] {
   const label =
     /(?:\b(?:d\.?\s*o\.?\s*b\.?|date\s*of\s*birth|birth\s*date|born\s+on)|जन्म\s*(?:तिथि|तारीख|दिनांक)?)\s*[:.#=-]?\s*/gi;
   const dateAfter = new RegExp(
-    "^(?:\\d{1,2}[/.\-]\\d{1,2}[/.\-]\\d{2,4}|\\d{4}-\\d{2}-\\d{2}|\\d{1,2}(?:st|nd|rd|th)?\\s+" + MONTH + "\\s*,?\\s*\\d{2,4})",
+    "^(?:\\d{1,2}[/.\-]\\d{1,2}[/.\-]\\d{2,4}|\\d{4}-\\d{2}-\\d{2}|" + MONTH_NAME_DATE + ")",
     "i",
   );
   for (const m of text.matchAll(label)) {
@@ -892,7 +898,7 @@ function findDates(text: string): PhiSpan[] {
     add(out, "date", text, m.index, m.index + m[0].length);
   }
   const words = new RegExp(
-    "\\b(\\d{1,2}(?:st|nd|rd|th)?\\s+" + MONTH + "\\s*,?\\s*\\d{2,4})\\b",
+    "\\b(" + MONTH_NAME_DATE + ")\\b",
     "gi",
   );
   for (const m of text.matchAll(words)) {
@@ -930,7 +936,7 @@ const TYPE_PRIORITY: Record<PhiType, number> = {
   vid: 8,
   pan: 8,
   dob: 7,
-  date: 7,
+  date: 6,
   email: 6,
   phone: 5,
   uhid: 4,
