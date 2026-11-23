@@ -116,7 +116,7 @@ jobs:
 
       - name: Comment preview URL on the pull request
         if: steps.creds.outputs.available == 'true' && steps.channel.outputs.url != ''
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const url = '${{ steps.channel.outputs.url }}';
