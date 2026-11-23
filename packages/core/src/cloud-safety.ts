@@ -7,7 +7,7 @@
  * stage.meta.sendsDataOffDevice === true):
  *  1. a stage of kind 'deid' must already have completed earlier in the pipeline;
  *  2. raw image input is refused, and `image` is stripped from text/fields input;
- *  3. every string in the input must pass the injected `check` (throws if unsafe).
+ *  3. every string in the input must pass the injected `check` (default: deid.ts assertSafeForCloud).
  * Otherwise the stage does not run, the run fails, and the run record says why.
  * A stage may be exempted by id (explicit consent, e.g. a cloud-only baseline); that is recorded.
  *
@@ -16,7 +16,7 @@
  */
 import type { Stage, StageData, StageResult } from './types.js';
 import { describeStage } from './stage.js';
-import { deidentify } from './deid.js';
+import { assertSafeForCloud, UnsafeForCloudError } from './deid.js';
 
 /** Throws if `text` is not safe to send to the cloud. Must not include the offending values in its message. */
 export type CloudSafetyCheck = (text: string) => void;
@@ -51,15 +51,19 @@ export function isEgressStage(stage: Stage): boolean {
 }
 
 /**
- * Interim default check using core's deidentify(): text is safe only if the de-identifier finds
- * nothing left to redact. When Rachel's deid.ts with assertSafeForCloud() lands, switch the default
- * to `fromAssertSafeForCloud(assertSafeForCloud)`.
+ * Default check: Rachel's fail-closed assertSafeForCloud() from deid.ts. Its UnsafeForCloudError
+ * message quotes the offending text, so it is rethrown with identifier types and offsets only:
+ * refusal messages end up in run records and logs and must not carry PHI.
  */
 export const defaultCloudSafetyCheck: CloudSafetyCheck = (text) => {
-  const r = deidentify(text);
-  if (r.total > 0) {
-    const kinds = Object.entries(r.redactions).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${k}×${n}`).join(', ');
-    throw new Error(`text still contains identifiers (${kinds})`);
+  try {
+    assertSafeForCloud(text);
+  } catch (e) {
+    if (e instanceof UnsafeForCloudError) {
+      const kinds = [...new Set(e.findings.map((f) => f.type))].sort().join(', ');
+      throw new Error(`text still contains ${e.findings.length} identifier(s): ${kinds}`);
+    }
+    throw e;
   }
 };
 

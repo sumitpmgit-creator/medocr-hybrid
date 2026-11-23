@@ -87,7 +87,9 @@ describe('BUG-005: fail-closed cloud egress', () => {
 
   it('default check and egressStrings', () => {
     expect(() => defaultCloudSafetyCheck('Tab Augmentin 625 mg BD')).not.toThrow();
-    expect(() => defaultCloudSafetyCheck(PHI)).toThrow(/identifiers/);
+    expect(() => defaultCloudSafetyCheck(PHI)).toThrow(/identifier\(s\)/);
+    expect(() => defaultCloudSafetyCheck(PHI)).not.toThrow(/9876543210|Ravi/);
+    expect(() => defaultCloudSafetyCheck('Collection date: 2026-03-12')).toThrow(/date/i);
     expect(() => defaultCloudSafetyCheck(deidentify(PHI).text)).not.toThrow();
     const doc: ClinicalDoc = { documentType: 'other', medications: [{ name: 'X', instructions: 'call 9876543210' }], labResults: [] };
     expect(egressStrings({ kind: 'fields', doc, image: image.image })).toEqual(['other', 'X', 'call 9876543210']);
