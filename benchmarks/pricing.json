@@ -1,0 +1,21 @@
+{
+  "source": "https://ai.google.dev/gemini-api/docs/pricing (Gemini Developer API, the backend Firebase AI Logic's GoogleAIBackend bills through)",
+  "retrieved": "2026-11-23",
+  "tier": "Paid tier, Standard (non-batch), USD per 1M tokens, text/image input",
+  "notes": [
+    "Cost is computed only from token counts the pipeline reports (Firebase AI Logic response usageMetadata: promptTokenCount, candidatesTokenCount + thoughtsTokenCount). The harness never guesses tokens.",
+    "Output price includes thinking tokens, so pipelines must add thoughtsTokenCount into outputTokens.",
+    "On-device Gemini Nano (Chrome Prompt API) has no per-call API charge; the device's compute and battery are not costed.",
+    "Free tier is ignored: it has rate limits and Google may use free-tier data to improve its products, which rules it out for medical documents.",
+    "gemini-2.5-flash is deprecated; from 2026-12-01 its requests route to gemini-3.5-flash-lite and bill at that rate (per the same page).",
+    "If the pipeline uses the Vertex AI backend instead, replace these rates with Vertex AI pricing (https://cloud.google.com/vertex-ai/generative-ai/pricing)."
+  ],
+  "on_device_usd_per_call": 0,
+  "models": {
+    "gemini-2.5-flash-lite": { "input_per_1m_usd": 0.10, "output_per_1m_usd": 0.40 },
+    "gemini-2.5-flash": { "input_per_1m_usd": 0.30, "output_per_1m_usd": 2.50 },
+    "gemini-3.1-flash-lite": { "input_per_1m_usd": 0.25, "output_per_1m_usd": 1.50 },
+    "gemini-3.5-flash-lite": { "input_per_1m_usd": 0.30, "output_per_1m_usd": 2.50 },
+    "gemini-3-flash-preview": { "input_per_1m_usd": 0.50, "output_per_1m_usd": 3.00 }
+  }
+}

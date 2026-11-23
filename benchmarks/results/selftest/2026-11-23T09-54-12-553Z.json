@@ -1,0 +1,558 @@
+{
+  "schema_version": 1,
+  "kind": "harness-self-test",
+  "WARNING": "HARNESS SELF-TEST with a mock pipeline and synthetic fixtures. These numbers are NOT benchmark results.",
+  "started_at": "2026-11-23T09:54:12.553Z",
+  "finished_at": "2026-11-23T09:54:12.598Z",
+  "argv": [
+    "--self-test"
+  ],
+  "environment": {
+    "node": "v24.22.1",
+    "os": "Linux 6.12.113+ x64",
+    "cpus": 8,
+    "ram_gb": 16,
+    "driver": "mock",
+    "note": "HARNESS SELF-TEST — synthetic pipeline, numbers are not real"
+  },
+  "dataset": {
+    "path": "benchmarks/selftest/fixtures",
+    "manifest_sha256": "bb14e6de756efd4c54ceb2894f03b4acb9def3bb49f14dadc5a43e5ece9fe5ed",
+    "n_samples": 4,
+    "limit": null,
+    "with_reference_text": 4,
+    "with_fields": 4
+  },
+  "pricing": {
+    "source": "https://ai.google.dev/gemini-api/docs/pricing (Gemini Developer API, the backend Firebase AI Logic's GoogleAIBackend bills through)",
+    "retrieved": "2026-11-23",
+    "tier": "Paid tier, Standard (non-batch), USD per 1M tokens, text/image input",
+    "notes": [
+      "Cost is computed only from token counts the pipeline reports (Firebase AI Logic response usageMetadata: promptTokenCount, candidatesTokenCount + thoughtsTokenCount). The harness never guesses tokens.",
+      "Output price includes thinking tokens, so pipelines must add thoughtsTokenCount into outputTokens.",
+      "On-device Gemini Nano (Chrome Prompt API) has no per-call API charge; the device's compute and battery are not costed.",
+      "Free tier is ignored: it has rate limits and Google may use free-tier data to improve its products, which rules it out for medical documents.",
+      "gemini-2.5-flash is deprecated; from 2026-12-01 its requests route to gemini-3.5-flash-lite and bill at that rate (per the same page).",
+      "If the pipeline uses the Vertex AI backend instead, replace these rates with Vertex AI pricing (https://cloud.google.com/vertex-ai/generative-ai/pricing)."
+    ],
+    "on_device_usd_per_call": 0,
+    "models": {
+      "gemini-2.5-flash-lite": {
+        "input_per_1m_usd": 0.1,
+        "output_per_1m_usd": 0.4
+      },
+      "gemini-2.5-flash": {
+        "input_per_1m_usd": 0.3,
+        "output_per_1m_usd": 2.5
+      },
+      "gemini-3.1-flash-lite": {
+        "input_per_1m_usd": 0.25,
+        "output_per_1m_usd": 1.5
+      },
+      "gemini-3.5-flash-lite": {
+        "input_per_1m_usd": 0.3,
+        "output_per_1m_usd": 2.5
+      },
+      "gemini-3-flash-preview": {
+        "input_per_1m_usd": 0.5,
+        "output_per_1m_usd": 3
+      }
+    }
+  },
+  "modes": {
+    "device": {
+      "status": "RAN",
+      "summary": {
+        "docs": 4,
+        "docs_ok": 4,
+        "errors": 0,
+        "cer": 0.10857142857142857,
+        "wer": 0.5151515151515151,
+        "field_accuracy": 0.75,
+        "latency_ms_p50": 0.011502000000007229,
+        "latency_ms_p95": 0.1357670000000013,
+        "latency_ms_mean": 0.04369525000000252,
+        "cost_usd_per_doc": 0,
+        "bytes_sent_per_doc": 0,
+        "cloud_requests_per_doc": 0,
+        "route_counts": {
+          "device": 4
+        },
+        "caveats": []
+      },
+      "samples": [
+        {
+          "id": "st-01",
+          "document_type": "lab_report",
+          "ok": true,
+          "latency_ms": 0.1357670000000013,
+          "route": "device",
+          "stages": null,
+          "egress": {
+            "requests": 0,
+            "bytes": 0,
+            "unmeasuredBodies": 0,
+            "hosts": {}
+          },
+          "char": {
+            "edits": 5,
+            "refLen": 50
+          },
+          "word": {
+            "edits": 5,
+            "refLen": 8
+          },
+          "fields": {
+            "correct": 4,
+            "total": 5,
+            "misses": [
+              {
+                "path": "patient_age",
+                "expected": "42",
+                "predicted": "99",
+                "match": false
+              }
+            ]
+          },
+          "usage": [],
+          "cost_usd": 0
+        },
+        {
+          "id": "st-02",
+          "document_type": "prescription",
+          "ok": true,
+          "latency_ms": 0.01917699999999911,
+          "route": "device",
+          "stages": null,
+          "egress": {
+            "requests": 0,
+            "bytes": 0,
+            "unmeasuredBodies": 0,
+            "hosts": {}
+          },
+          "char": {
+            "edits": 5,
+            "refLen": 44
+          },
+          "word": {
+            "edits": 4,
+            "refLen": 9
+          },
+          "fields": {
+            "correct": 2,
+            "total": 3,
+            "misses": [
+              {
+                "path": "patient_age",
+                "expected": "31",
+                "predicted": "99",
+                "match": false
+              }
+            ]
+          },
+          "usage": [],
+          "cost_usd": 0
+        },
+        {
+          "id": "st-03",
+          "document_type": "lab_report",
+          "ok": true,
+          "latency_ms": 0.011502000000007229,
+          "route": "device",
+          "stages": null,
+          "egress": {
+            "requests": 0,
+            "bytes": 0,
+            "unmeasuredBodies": 0,
+            "hosts": {}
+          },
+          "char": {
+            "edits": 4,
+            "refLen": 36
+          },
+          "word": {
+            "edits": 4,
+            "refLen": 7
+          },
+          "fields": {
+            "correct": 4,
+            "total": 5,
+            "misses": [
+              {
+                "path": "patient_age",
+                "expected": "55",
+                "predicted": "99",
+                "match": false
+              }
+            ]
+          },
+          "usage": [],
+          "cost_usd": 0
+        },
+        {
+          "id": "st-12",
+          "document_type": "prescription",
+          "ok": true,
+          "latency_ms": 0.008335000000002424,
+          "route": "device",
+          "stages": null,
+          "egress": {
+            "requests": 0,
+            "bytes": 0,
+            "unmeasuredBodies": 0,
+            "hosts": {}
+          },
+          "char": {
+            "edits": 5,
+            "refLen": 45
+          },
+          "word": {
+            "edits": 4,
+            "refLen": 9
+          },
+          "fields": {
+            "correct": 2,
+            "total": 3,
+            "misses": [
+              {
+                "path": "patient_age",
+                "expected": "8",
+                "predicted": "99",
+                "match": false
+              }
+            ]
+          },
+          "usage": [],
+          "cost_usd": 0
+        }
+      ]
+    },
+    "cloud": {
+      "status": "RAN",
+      "summary": {
+        "docs": 4,
+        "docs_ok": 4,
+        "errors": 0,
+        "cer": 0,
+        "wer": 0,
+        "field_accuracy": 1,
+        "latency_ms_p50": 2.4863849999999985,
+        "latency_ms_p95": 19.305861000000007,
+        "latency_ms_mean": 6.672382750000004,
+        "cost_usd_per_doc": 0.000289,
+        "bytes_sent_per_doc": 2942,
+        "cloud_requests_per_doc": 1,
+        "route_counts": {
+          "cloud": 4
+        },
+        "caveats": []
+      },
+      "samples": [
+        {
+          "id": "st-01",
+          "document_type": "lab_report",
+          "ok": true,
+          "latency_ms": 19.305861000000007,
+          "route": "cloud",
+          "stages": null,
+          "egress": {
+            "requests": 1,
+            "bytes": 3162,
+            "unmeasuredBodies": 0,
+            "hosts": {
+              "127.0.0.1": 3162
+            }
+          },
+          "char": {
+            "edits": 0,
+            "refLen": 50
+          },
+          "word": {
+            "edits": 0,
+            "refLen": 8
+          },
+          "fields": {
+            "correct": 5,
+            "total": 5,
+            "misses": []
+          },
+          "usage": [
+            {
+              "model": "gemini-2.5-flash-lite",
+              "promptTokens": 1290,
+              "outputTokens": 400
+            }
+          ],
+          "cost_usd": 0.000289
+        },
+        {
+          "id": "st-02",
+          "document_type": "prescription",
+          "ok": true,
+          "latency_ms": 2.8134140000000087,
+          "route": "cloud",
+          "stages": null,
+          "egress": {
+            "requests": 1,
+            "bytes": 2785,
+            "unmeasuredBodies": 0,
+            "hosts": {
+              "127.0.0.1": 2785
+            }
+          },
+          "char": {
+            "edits": 0,
+            "refLen": 44
+          },
+          "word": {
+            "edits": 0,
+            "refLen": 9
+          },
+          "fields": {
+            "correct": 3,
+            "total": 3,
+            "misses": []
+          },
+          "usage": [
+            {
+              "model": "gemini-2.5-flash-lite",
+              "promptTokens": 1290,
+              "outputTokens": 400
+            }
+          ],
+          "cost_usd": 0.000289
+        },
+        {
+          "id": "st-03",
+          "document_type": "lab_report",
+          "ok": true,
+          "latency_ms": 2.083871000000002,
+          "route": "cloud",
+          "stages": null,
+          "egress": {
+            "requests": 1,
+            "bytes": 2867,
+            "unmeasuredBodies": 0,
+            "hosts": {
+              "127.0.0.1": 2867
+            }
+          },
+          "char": {
+            "edits": 0,
+            "refLen": 36
+          },
+          "word": {
+            "edits": 0,
+            "refLen": 7
+          },
+          "fields": {
+            "correct": 5,
+            "total": 5,
+            "misses": []
+          },
+          "usage": [
+            {
+              "model": "gemini-2.5-flash-lite",
+              "promptTokens": 1290,
+              "outputTokens": 400
+            }
+          ],
+          "cost_usd": 0.000289
+        },
+        {
+          "id": "st-12",
+          "document_type": "prescription",
+          "ok": true,
+          "latency_ms": 2.4863849999999985,
+          "route": "cloud",
+          "stages": null,
+          "egress": {
+            "requests": 1,
+            "bytes": 2954,
+            "unmeasuredBodies": 0,
+            "hosts": {
+              "127.0.0.1": 2954
+            }
+          },
+          "char": {
+            "edits": 0,
+            "refLen": 45
+          },
+          "word": {
+            "edits": 0,
+            "refLen": 9
+          },
+          "fields": {
+            "correct": 3,
+            "total": 3,
+            "misses": []
+          },
+          "usage": [
+            {
+              "model": "gemini-2.5-flash-lite",
+              "promptTokens": 1290,
+              "outputTokens": 400
+            }
+          ],
+          "cost_usd": 0.000289
+        }
+      ]
+    },
+    "hybrid": {
+      "status": "RAN",
+      "summary": {
+        "docs": 4,
+        "docs_ok": 4,
+        "errors": 0,
+        "cer": 0.05142857142857143,
+        "wer": 0.2727272727272727,
+        "field_accuracy": 1,
+        "latency_ms_p50": 0.017768999999987045,
+        "latency_ms_p95": 1.287149999999997,
+        "latency_ms_mean": 0.6020760000000038,
+        "cost_usd_per_doc": 0.0001445,
+        "bytes_sent_per_doc": 1434.75,
+        "cloud_requests_per_doc": 0.5,
+        "route_counts": {
+          "device": 2,
+          "cloud": 2
+        },
+        "caveats": []
+      },
+      "samples": [
+        {
+          "id": "st-01",
+          "document_type": "lab_report",
+          "ok": true,
+          "latency_ms": 0.017768999999987045,
+          "route": "device",
+          "stages": null,
+          "egress": {
+            "requests": 0,
+            "bytes": 0,
+            "unmeasuredBodies": 0,
+            "hosts": {}
+          },
+          "char": {
+            "edits": 5,
+            "refLen": 50
+          },
+          "word": {
+            "edits": 5,
+            "refLen": 8
+          },
+          "fields": {
+            "correct": 5,
+            "total": 5,
+            "misses": []
+          },
+          "usage": [],
+          "cost_usd": 0
+        },
+        {
+          "id": "st-02",
+          "document_type": "prescription",
+          "ok": true,
+          "latency_ms": 1.287149999999997,
+          "route": "cloud",
+          "stages": null,
+          "egress": {
+            "requests": 1,
+            "bytes": 2785,
+            "unmeasuredBodies": 0,
+            "hosts": {
+              "127.0.0.1": 2785
+            }
+          },
+          "char": {
+            "edits": 0,
+            "refLen": 44
+          },
+          "word": {
+            "edits": 0,
+            "refLen": 9
+          },
+          "fields": {
+            "correct": 3,
+            "total": 3,
+            "misses": []
+          },
+          "usage": [
+            {
+              "model": "gemini-2.5-flash-lite",
+              "promptTokens": 1290,
+              "outputTokens": 400
+            }
+          ],
+          "cost_usd": 0.000289
+        },
+        {
+          "id": "st-03",
+          "document_type": "lab_report",
+          "ok": true,
+          "latency_ms": 0.01156700000001365,
+          "route": "device",
+          "stages": null,
+          "egress": {
+            "requests": 0,
+            "bytes": 0,
+            "unmeasuredBodies": 0,
+            "hosts": {}
+          },
+          "char": {
+            "edits": 4,
+            "refLen": 36
+          },
+          "word": {
+            "edits": 4,
+            "refLen": 7
+          },
+          "fields": {
+            "correct": 5,
+            "total": 5,
+            "misses": []
+          },
+          "usage": [],
+          "cost_usd": 0
+        },
+        {
+          "id": "st-12",
+          "document_type": "prescription",
+          "ok": true,
+          "latency_ms": 1.0918180000000177,
+          "route": "cloud",
+          "stages": null,
+          "egress": {
+            "requests": 1,
+            "bytes": 2954,
+            "unmeasuredBodies": 0,
+            "hosts": {
+              "127.0.0.1": 2954
+            }
+          },
+          "char": {
+            "edits": 0,
+            "refLen": 45
+          },
+          "word": {
+            "edits": 0,
+            "refLen": 9
+          },
+          "fields": {
+            "correct": 3,
+            "total": 3,
+            "misses": []
+          },
+          "usage": [
+            {
+              "model": "gemini-2.5-flash-lite",
+              "promptTokens": 1290,
+              "outputTokens": 400
+            }
+          ],
+          "cost_usd": 0.000289
+        }
+      ]
+    }
+  }
+}

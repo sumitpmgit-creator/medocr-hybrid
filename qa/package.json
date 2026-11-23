@@ -1,0 +1,18 @@
+{
+  "name": "@med-ocr/qa",
+  "private": true,
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "QA suite for MedOCR Hybrid. Standalone (not a pnpm workspace member); installs its own dev deps into qa/node_modules.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:area": "vitest run --project",
+    "results": "node scripts/record-results.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "5.1.1"
+  }
+}

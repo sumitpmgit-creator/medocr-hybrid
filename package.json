@@ -1,0 +1,16 @@
+{
+  "name": "med-ocr",
+  "private": true,
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "test": "pnpm -r --if-present test",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "import:ekacare": "python3 scripts/import_ekacare.py"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

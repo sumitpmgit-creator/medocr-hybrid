@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MedOCR Hybrid Bench</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <header>
+    <h1>MedOCR Hybrid Bench</h1>
+    <p>Reads medical documents on your device with Gemini Nano. Only de-identified, low-confidence fields go to the cloud.</p>
+  </header>
+  <section class="controls">
+    <button id="init">1. Prepare on-device model</button>
+    <span id="status">Not initialised</span>
+    <label>2. Document (PNG/JPEG/PDF) <input id="file" type="file" accept="image/png,image/jpeg,application/pdf" /></label>
+    <label>Reference transcription (optional, for CER) <textarea id="refText" rows="3"></textarea></label>
+    <label>Reference fields JSON (optional, for field F1) <textarea id="refJson" rows="3"></textarea></label>
+    <button id="run" disabled>3. Run all three pipelines</button>
+  </section>
+  <img id="preview" alt="" />
+  <section id="results" class="grid"></section>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

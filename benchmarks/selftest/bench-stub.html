@@ -1,0 +1,16 @@
+<!doctype html>
+<!-- HARNESS SELF-TEST ONLY: stub of the window.medocrBench contract used to check the browser driver
+     (CDP wiring + egress metering). Serve with: node benchmarks/selftest/serve-stub.mjs -->
+<meta charset="utf-8"><title>medocrBench stub</title>
+<script>
+window.medocrBench = {
+  async capabilities() { return { device: false, cloud: true, deviceReason: 'stub', cloudReason: '' }; },
+  async run(input, { mode }) {
+    if (mode !== 'device') {
+      // 127.0.0.1.nip.io resolves to loopback but is not a loopback hostname, so the meter counts it.
+      await fetch(`http://127.0.0.1.nip.io:${location.port}/sink`, { method: 'POST', body: input.bytes }).catch(() => {});
+    }
+    return { text: 'stub', fields: {}, route: mode === 'device' ? 'device' : 'cloud', usage: [] };
+  },
+};
+</script>
