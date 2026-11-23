@@ -5,10 +5,27 @@
  * (numbers, quantities, reference ranges) and decides equality. Spec §7 rule: never normalise away
  * clinically significant differences (5 mg vs 50 mg, 0-0-1 vs 1-0-1, mg vs mcg).
  */
-import { normalizeFrequency, normalizeGeneric, normalizeName, normalizeNumber, normalizeStrength, normalizeUnit } from './normalize.js';
+import { normalizeDrugName, normalizeDuration, normalizeFrequency, normalizeGeneric, normalizeName, normalizeNumber, normalizeStrength, normalizeUnit, NORMALIZATION_VERSION } from './normalize.js';
 
-/** Bump when any comparison rule below changes (spec: "explicit, versioned rules"). */
-export const NORMALIZATION_RULES_VERSION = '1.0.0';
+/**
+ * Bump when any comparison rule below changes (spec: "explicit, versioned rules").
+ * Scores also carry normalize.ts's NORMALIZATION_VERSION (alias tables); see scoringRulesId().
+ */
+export const NORMALIZATION_RULES_VERSION = '1.1.0';
+
+/** Identifies the full rule set a score was computed under: comparison rules + alias tables. */
+export function scoringRulesId(): string {
+  return `compare@${NORMALIZATION_RULES_VERSION}+normalize@${NORMALIZATION_VERSION}`;
+}
+
+/**
+ * Drug identity for comparison: normalize.ts's generic alias table (PCM → paracetamol), brand
+ * mapping OFF (a brand→generic substitution must not count as correct), forms and strength stripped.
+ */
+export function canonicalDrugName(v?: string | null): string {
+  if (!v) return '';
+  return normalizeName(normalizeDrugName(v, { mapBrands: false }).name || v);
+}
 
 export interface NumericTolerance {
   /** Absolute tolerance (default 0) */
@@ -17,10 +34,11 @@ export interface NumericTolerance {
   rel?: number;
 }
 
-const NUM = String.raw`[-+−]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|[-+−]?\.\d+`;
+// Western (1,000,000) and Indian (2,50,000 / 1,00,00,000) digit grouping, or no grouping.
+const NUM = String.raw`[-+−]?(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})+,\d{3}|\d+)(?:\.\d+)?|[-+−]?\.\d+`;
 const NUM_RE = new RegExp(`^(?:${NUM})$`);
 
-/** Parse a bare number: '12.50', '1,000', '−3', '.5'. Undefined if the string is not just a number. */
+/** Parse a bare number: '12.50', '1,000', '2,50,000', '−3', '.5'. Undefined if the string is not just a number. */
 export function parseNumber(v?: string | null): number | undefined {
   if (v === null || v === undefined) return undefined;
   const t = v.trim();
@@ -67,17 +85,18 @@ export interface ReferenceRange {
 export function parseReferenceRange(v?: string | null): ReferenceRange | undefined {
   if (!v) return undefined;
   const t = v.trim().toLowerCase().replace(/−/g, '-');
-  const n = String.raw`(-?(?:\d+(?:\.\d+)?|\.\d+))`;
+  const n = String.raw`(-?(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})+,\d{3}|\d+)(?:\.\d+)?|-?\.\d+)`;
+  const num = (x?: string) => parseNumber(x) ?? NaN; // grouping-aware (1,50,000)
   const unitOf = (rest?: string) => { const u = canonicalUnit((rest ?? '').trim()); return u ? { unit: u } : {}; };
   let m = new RegExp(`^${n}\\s*(?:-|–|—|to)\\s*${n}\\s*(.*)$`).exec(t);
   if (m) {
-    const low = Number(m[1]), high = Number(m[2]);
+    const low = num(m[1]), high = num(m[2]);
     if (low > high) return undefined;
     return { low, high, lowInclusive: true, highInclusive: true, ...unitOf(m[3]) };
   }
   m = new RegExp(`^(<=|≤|=<|<|less than|below|up\\s*to|upto|>=|≥|=>|>|more than|greater than|above)\\s*${n}\\s*(.*)$`).exec(t);
   if (m) {
-    const op = m[1]!.replace(/\s+/g, ' '), x = Number(m[2]);
+    const op = m[1]!.replace(/\s+/g, ' '), x = num(m[2]);
     if (['<', 'less than', 'below'].includes(op)) return { high: x, lowInclusive: true, highInclusive: false, ...unitOf(m[3]) };
     if (['<=', '≤', '=<'].includes(op) || op.startsWith('up')) return { high: x, lowInclusive: true, highInclusive: true, ...unitOf(m[3]) };
     if (['>', 'more than', 'greater than', 'above'].includes(op)) return { low: x, lowInclusive: false, highInclusive: true, ...unitOf(m[3]) };
@@ -97,7 +116,7 @@ export function rangesEqual(a: ReferenceRange, b: ReferenceRange, tol?: NumericT
 
 export type ValueMatch = 'exact' | 'normalized' | 'mismatch';
 
-export type FieldValueKind = 'name' | 'quantity' | 'frequency' | 'number' | 'unit' | 'range' | 'text';
+export type FieldValueKind = 'name' | 'drug' | 'quantity' | 'frequency' | 'duration' | 'number' | 'unit' | 'range' | 'text';
 
 export interface CompareOptions { tolerance?: NumericTolerance }
 
@@ -107,6 +126,8 @@ export function compareValues(kind: FieldValueKind, expected: string, actual: st
   const tol = o.tolerance;
   switch (kind) {
     case 'name': return normalizeName(expected) === normalizeName(actual) ? 'normalized' : 'mismatch';
+    case 'drug': return canonicalDrugName(expected) === canonicalDrugName(actual) ? 'normalized' : 'mismatch';
+    case 'duration': return normalizeGeneric(normalizeDuration(expected)) === normalizeGeneric(normalizeDuration(actual)) ? 'normalized' : 'mismatch';
     case 'frequency': return normalizeFrequency(expected) === normalizeFrequency(actual) ? 'normalized' : 'mismatch';
     case 'unit': return canonicalUnit(expected) === canonicalUnit(actual) ? 'normalized' : 'mismatch';
     case 'number': {

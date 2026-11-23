@@ -12,6 +12,7 @@
 import type { Pipeline, PipelineRun, Stage, StageData, StageMetrics, StageResult } from './types.js';
 import { emptyMetrics, newRunId } from './pipeline.js';
 import { describeStage } from './stage.js';
+import { NORMALIZATION_VERSION } from './normalize.js';
 import { assertSerializable, hashValue, toSerializable } from './hash.js';
 import { CHECKPOINT_SCHEMA_VERSION, checkpointKey, type AttemptRecord, type CheckpointRecord, type CheckpointStore } from './checkpoint.js';
 
@@ -94,10 +95,14 @@ function addMetrics(a: StageMetrics, b: StageMetrics): StageMetrics {
   };
 }
 
-/** Hash that decides checkpoint reuse. Includes the run config and the stage's model/fingerprint. */
+/**
+ * Hash that decides checkpoint reuse. Includes the run config, the stage's model/fingerprint and
+ * normalize.ts's NORMALIZATION_VERSION, so results produced under different normalisation rules
+ * are never mixed in one resumed run.
+ */
 export function stageInputHash(stage: Stage, input: StageData, config?: Record<string, unknown>): string {
   const m = describeStage(stage);
-  return hashValue({ stageId: stage.id, input, config: config ?? null, model: m.model ?? null, fingerprint: m.fingerprint ?? null });
+  return hashValue({ stageId: stage.id, input, config: config ?? null, model: m.model ?? null, fingerprint: m.fingerprint ?? null, normalizationVersion: NORMALIZATION_VERSION });
 }
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));

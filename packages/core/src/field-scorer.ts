@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 /** Benchmark B: field-level precision / recall / F1, exact match, missing fields, unsupported values, safety screen. */
 import type { ClinicalDoc, LabResult, Medication } from './types.js';
-import { normalizeFrequency, normalizeGeneric, normalizeName, normalizeNumber, normalizeStrength, normalizeUnit } from './normalize.js';
+import { NORMALIZATION_VERSION, normalizeFrequency, normalizeGeneric, normalizeName, normalizeNumber, normalizeStrength, normalizeUnit } from './normalize.js';
 import { similarity } from './text-metrics.js';
-import { compareValues, NORMALIZATION_RULES_VERSION, type FieldValueKind, type NumericTolerance } from './clinical-values.js';
+import { canonicalDrugName, compareValues, NORMALIZATION_RULES_VERSION, scoringRulesId, type FieldValueKind, type NumericTolerance } from './clinical-values.js';
 
 export type EntityType = 'medication' | 'lab';
 export type FieldOutcome = 'correct' | 'wrong' | 'missing' | 'unsupported';
@@ -53,7 +53,12 @@ export interface FieldScore {
   alignment: { medication: Alignment; lab: Alignment };
   /** Predicted records repeating the same entity more often than the reference does */
   duplicateEntities: number;
+  /** Comparison rules version (clinical-values.ts) */
   rulesVersion: string;
+  /** normalize.ts alias-table version */
+  normalizationVersion: number;
+  /** Both, as one string: 'compare@x+normalize@y'. Never mix scores with different rulesId. */
+  rulesId: string;
 }
 
 type Norm = (v?: string | null) => string;
@@ -61,15 +66,15 @@ type Norm = (v?: string | null) => string;
 interface FieldSpec<T> { field: keyof T; norm: Norm; kind: FieldValueKind; critical: boolean; required: boolean }
 
 const MED_FIELDS: FieldSpec<Medication>[] = [
-  { field: 'name', norm: normalizeName, kind: 'name', critical: true, required: true },
-  { field: 'genericName', norm: normalizeName, kind: 'name', critical: true, required: false },
+  { field: 'name', norm: normalizeName, kind: 'drug', critical: true, required: true },
+  { field: 'genericName', norm: normalizeName, kind: 'drug', critical: true, required: false },
   { field: 'strength', norm: normalizeStrength, kind: 'quantity', critical: true, required: false },
   { field: 'dose', norm: normalizeGeneric, kind: 'quantity', critical: true, required: false },
   { field: 'frequency', norm: normalizeFrequency, kind: 'frequency', critical: true, required: false },
   { field: 'route', norm: normalizeGeneric, kind: 'text', critical: true, required: false },
   { field: 'dosageForm', norm: normalizeGeneric, kind: 'text', critical: false, required: false },
   { field: 'timing', norm: normalizeGeneric, kind: 'text', critical: false, required: false },
-  { field: 'duration', norm: normalizeGeneric, kind: 'text', critical: false, required: false },
+  { field: 'duration', norm: normalizeGeneric, kind: 'duration', critical: false, required: false },
   { field: 'quantity', norm: normalizeNumber, kind: 'quantity', critical: false, required: false },
   { field: 'instructions', norm: normalizeGeneric, kind: 'text', critical: false, required: false },
 ];
@@ -174,6 +179,7 @@ function compareEntities<T extends object>(
   pred: T[],
   fields: FieldSpec<T>[],
   key: (t: T) => string,
+  canon: (v: string) => string,
   secondary: keyof T,
   secondaryKind: FieldValueKind,
   o: ScoreOptions,
@@ -182,7 +188,7 @@ function compareEntities<T extends object>(
   const minSim = o.minNameSimilarity ?? 0.7;
   // Name similarity gates the match; agreement on the secondary field (strength / value) breaks ties.
   const alignment = alignRecords(ref, pred, (r, p) => {
-    const s = similarity(normalizeName(key(r)), normalizeName(key(p)));
+    const s = similarity(canon(key(r)), canon(key(p)));
     if (s < minSim) return 0;
     const a = strOf(r[secondary]), b = strOf(p[secondary]);
     const bonus = a !== null && b !== null && compareValues(secondaryKind, a, b, o) !== 'mismatch' ? 0.05 : 0;
@@ -297,8 +303,8 @@ function duplicateCount<T>(ref: T[], pred: T[], key: (t: T) => string): number {
 }
 
 export function scoreFields(reference: ClinicalDoc, predicted: ClinicalDoc, opts: ScoreOptions = {}): FieldScore {
-  const med = compareEntities('medication', reference.medications, predicted.medications, MED_FIELDS, (m) => m.name, 'strength', 'quantity', opts);
-  const lab = compareEntities('lab', reference.labResults, predicted.labResults, LAB_FIELDS, (l) => l.test, 'value', 'number', opts);
+  const med = compareEntities('medication', reference.medications, predicted.medications, MED_FIELDS, (m) => m.name, canonicalDrugName, 'strength', 'quantity', opts);
+  const lab = compareEntities('lab', reference.labResults, predicted.labResults, LAB_FIELDS, (l) => l.test, normalizeName, 'value', 'number', opts);
   const comparisons = [...med.comparisons, ...lab.comparisons];
   const tp = comparisons.filter((c) => c.outcome === 'correct').length;
   const predictedN = comparisons.filter((c) => c.actual !== null).length;
@@ -329,5 +335,7 @@ export function scoreFields(reference: ClinicalDoc, predicted: ClinicalDoc, opts
     alignment: { medication: med.alignment, lab: lab.alignment },
     duplicateEntities: duplicateCount(reference.medications, predicted.medications, (m) => m.name) + duplicateCount(reference.labResults, predicted.labResults, (l) => l.test),
     rulesVersion: NORMALIZATION_RULES_VERSION,
+    normalizationVersion: NORMALIZATION_VERSION,
+    rulesId: scoringRulesId(),
   };
 }
