@@ -28,7 +28,7 @@ export type CloudSafetyCheck = (text: string) => void;
 export type CloudSafetyBlockReason = 'no_deid_stage' | 'raw_image' | 'unsafe_text' | 'undeclared_egress';
 
 export type UndeclaredEgressMode = 'warn' | 'fail';
-export const DEFAULT_UNDECLARED_EGRESS: UndeclaredEgressMode = 'warn';
+export const DEFAULT_UNDECLARED_EGRESS: UndeclaredEgressMode = 'fail';
 
 export class CloudSafetyError extends Error {
   constructor(readonly stageId: string, readonly reason: CloudSafetyBlockReason, detail: string) {

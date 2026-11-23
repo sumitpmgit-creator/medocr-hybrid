@@ -72,7 +72,7 @@ describe('cloudSafety.undeclaredEgress', () => {
   });
 
   it('default mode', async () => {
-    expect(DEFAULT_UNDECLARED_EGRESS).toBe('warn');
+    expect(DEFAULT_UNDECLARED_EGRESS).toBe('fail');
     expect(undeclaredEgressMode(legacyCloud())).toBe(DEFAULT_UNDECLARED_EGRESS);
     const run = await runPipeline({ id: 'p', name: 'p', stages: [ocr, legacyCloud()] }, image, { docId: 'd' });
     expect(run.failed).toBe(DEFAULT_UNDECLARED_EGRESS === 'fail');
