@@ -100,10 +100,18 @@ export function numericAccuracy(reference: string, hypothesis: string): number {
   return hit / r.length;
 }
 
-/** Similarity 0..1 based on CER (1 - min(1, CER)). Used for fuzzy matching of names. */
+/**
+ * Symmetric similarity in [0, 1]: 1 − editDistance / max(len a, len b), over code points, lowercase,
+ * whitespace-collapsed. similarity(a, b) === similarity(b, a). (It used to be 1 − CER(a→b), which
+ * divides by the first argument's length and so depended on argument order.)
+ */
 export function similarity(a: string, b: string): number {
-  if (!a && !b) return 1;
-  return 1 - Math.min(1, cer(a, b, { lowercase: true }).rate);
+  const x = Array.from(normalizeText(a, { lowercase: true }));
+  const y = Array.from(normalizeText(b, { lowercase: true }));
+  const n = Math.max(x.length, y.length);
+  if (n === 0) return 1;
+  const c = editCounts(x, y);
+  return 1 - (c.substitutions + c.deletions + c.insertions) / n;
 }
 
 /** Does `needle` appear (fuzzily) in `haystack`? Sliding window over words. */

@@ -14,6 +14,7 @@ export { normalizeText } from './text-metrics.js';
 export { normalizeText as normalizeClinicalText } from './normalize.js';
 export * from './clinical-values.js';
 export * from './field-scorer.js';
+export * from './calibration.js';
 export * from './attribution.js';
 export * from './error-register.js';
 export * from './deid.js';
