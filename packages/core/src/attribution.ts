@@ -9,6 +9,7 @@
 import type { ClinicalDoc, PipelineRun, StageResult } from './types.js';
 import { fieldValueKind, scoreFields, type FieldComparison } from './field-scorer.js';
 import { compareValues } from './clinical-values.js';
+import { deidentify, PLACEHOLDERS } from './deid.js';
 import { fuzzyContains } from './text-metrics.js';
 
 export type AttributionCause =
@@ -16,6 +17,7 @@ export type AttributionCause =
   | 'structuring'        // value was in the text but the structured field is wrong/missing
   | 'regression'         // a later stage changed a correct value into a wrong one
   | 'unsupported_inference' // final value not supported by any upstream text
+  | 'redacted'           // value replaced by a de-identification placeholder ([DATE], [NAME]...), not an OCR omission
   | 'unattributed';
 
 /** What one stage's output said about the reference value (null = stage carries no evidence, e.g. image). */
@@ -30,7 +32,20 @@ export interface Attribution {
   stageKind?: StageResult['stageKind'];
   /** Per-stage trail used to decide (reference value held / lost / no evidence) */
   evidence?: StageEvidence[];
+  /**
+   * cause 'redacted' only: true when the reference value is itself PHI that deid is supposed to
+   * remove (a date, a name...), i.e. the loss is by design; false = over-redaction of clinical data.
+   */
+  expectedRedaction?: boolean;
 }
+
+const PLACEHOLDER_RE = new RegExp(Object.values(PLACEHOLDERS).map((p) => p.replace(/[[\]]/g, '\\$&')).join('|'));
+
+/** Text carries at least one de-identification placeholder. */
+export function hasPlaceholder(text: string): boolean { return PLACEHOLDER_RE.test(text); }
+
+/** The value is itself something deid redacts (a date, DOB, name, phone...). */
+export function isRedactableValue(value: string): boolean { return deidentify(value).total > 0; }
 
 function stageHolds(step: StageResult, c: FieldComparison): boolean | undefined {
   const o = step.output;
@@ -129,6 +144,12 @@ export function attributeErrors(run: PipelineRun, reference: ClinicalDoc): Attri
       if (h === null) continue;
       if (h) { heldBefore = true; continue; }
       const blame = { comparison: c, stageId: step.stageId, stageKind: step.stageKind, evidence };
+      // De-identification placeholders: a gold date that reads [DATE] here was redacted, not misread.
+      const t = textOf(step);
+      if (t !== undefined && hasPlaceholder(t) && c.expected !== null) {
+        const redactable = isRedactableValue(c.expected);
+        if (step.stageKind === 'deid' || redactable) return { ...blame, cause: 'redacted', expectedRedaction: redactable };
+      }
       if (heldBefore) return { ...blame, cause: step.output.kind === 'fields' && i > firstFieldsIdx ? 'regression' : 'structuring' };
       if (step.stageKind === 'ocr+structure') {
         // One stage both read and structured: its own text tells the two apart.

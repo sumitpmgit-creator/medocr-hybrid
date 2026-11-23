@@ -21,7 +21,8 @@ export type ClinicalErrorType =
   | 'wrong_frequency'
   | 'wrong_route'
   | 'substitution'    // any other wrong value
-  | 'formatting';     // raw strings differ, meaning identical
+  | 'formatting'      // raw strings differ, meaning identical
+  | 'redaction';      // replaced by a de-identification placeholder
 
 export const ERROR_REGISTER_SCHEMA_VERSION = 1;
 
@@ -58,6 +59,7 @@ const MED_IDENTITY_FIELDS = new Set(['name', 'genericName']);
 export function classifyErrorType(a: Attribution, tol?: NumericTolerance): ClinicalErrorType {
   const c = a.comparison;
   if (c.outcome === 'correct') return 'formatting';
+  if (a.cause === 'redacted') return 'redaction';
   if (c.outcome === 'missing') return 'omission';
   if (c.outcome === 'unsupported') return 'hallucination';
   if (c.entityType === 'medication' && MED_IDENTITY_FIELDS.has(c.field)) return 'wrong_drug';
@@ -86,6 +88,8 @@ export interface SeverityRule {
  * moderate = incorrect but generally recoverable; minor = formatting without changed meaning.
  */
 export const SEVERITY_RULES: readonly SeverityRule[] = [
+  { id: 'R00-expected-redaction', severity: 'minor', description: 'PHI value (date, DOB, name...) replaced by its de-identification placeholder by design. Over-redaction of clinical data falls through to the field rules.',
+    applies: (a) => a.cause === 'redacted' && a.expectedRedaction === true },
   { id: 'R01-formatting', severity: 'minor', description: 'Raw strings differ but the normalised values match (formatting only).',
     applies: (a, t) => t === 'formatting' || a.comparison.formattingOnly === true },
   { id: 'R02-drug-identity', severity: 'critical', description: 'Medication identity (name or generic ingredient) wrong, omitted or invented.',
