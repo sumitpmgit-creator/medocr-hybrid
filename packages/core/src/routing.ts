@@ -6,6 +6,7 @@
  */
 import type { ClinicalDoc, LabResult, Medication } from './types.js';
 import { fuzzyContains } from './text-metrics.js';
+import { compareValues, type FieldValueKind } from './clinical-values.js';
 import { normalizeFrequency, normalizeName, normalizeNumber, normalizeStrength, normalizeUnit } from './normalize.js';
 
 export interface RoutingThresholds {
@@ -45,10 +46,16 @@ export function routeDoc(doc: ClinicalDoc, sourceText: string, t: RoutingThresho
 export function reconcileMedication(device: Medication, cloud: Medication | undefined, t: RoutingThresholds = DEFAULT_THRESHOLDS): { value: Medication; decision: RouteDecision; disagreements: string[] } {
   if (!cloud) return { value: device, decision: 'human_confirm', disagreements: ['cloud_missing'] };
   const d: string[] = [];
-  if (normalizeName(device.name) !== normalizeName(cloud.name)) d.push('name');
-  if (normalizeStrength(device.strength) !== normalizeStrength(cloud.strength)) d.push('strength');
-  if (normalizeFrequency(device.frequency) !== normalizeFrequency(cloud.frequency)) d.push('frequency');
-  if ((device.dose ?? '') !== (cloud.dose ?? '')) d.push('dose');
+  // Every critical medication field (field-scorer MED_FIELDS), compared with the scorer's rules.
+  // A value present on one side only is a disagreement. BUG-009: route was never compared.
+  const fields: [keyof Medication, FieldValueKind][] = [['name', 'drug'], ['genericName', 'drug'], ['strength', 'quantity'], ['dose', 'quantity'], ['frequency', 'frequency'], ['route', 'route']];
+  for (const [f, kind] of fields) {
+    const a = device[f], b = cloud[f];
+    const sa = a === undefined || a === null || a === '' ? null : String(a);
+    const sb = b === undefined || b === null || b === '' ? null : String(b);
+    if (sa === null && sb === null) continue;
+    if (sa === null || sb === null || compareValues(kind, sa, sb) === 'mismatch') d.push(f);
+  }
   const lowCloud = (cloud.confidence ?? 1) < t.humanReview;
   return { value: cloud, decision: d.length || lowCloud ? 'human_confirm' : 'accept_on_device', disagreements: d };
 }

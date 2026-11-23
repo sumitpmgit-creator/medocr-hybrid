@@ -105,6 +105,14 @@ export interface Stage {
   kind: StageKind;
   /** Accepted input kinds */
   accepts: StageData['kind'][];
+  /**
+   * Stage implementation version. Bump it whenever output can change for the same input
+   * (model revision, prompt, decoding settings); checkpoints from another version are discarded.
+   * Optional for backwards compatibility; treated as '0' when absent.
+   */
+  version?: string;
+  /** Capability metadata (runtime, model, cost/latency hints). See stage.ts `StageMeta`. */
+  meta?: import('./stage.js').StageMetaInput;
   run(input: StageData, ctx: StageContext): Promise<StageResult>;
 }
 
