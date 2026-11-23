@@ -24,7 +24,8 @@ function needsDevice(): Record<Mode, boolean> {
   const out = {} as Record<Mode, boolean>;
   for (const m of Object.keys(PIPELINE_FOR) as Mode[]) {
     const p = ps.find((x) => x.id === PIPELINE_FOR[m]);
-    out[m] = !!p && p.stages.some((s) => /^nano-/.test(s.id) || /on-device/i.test(s.name));
+    // Only Gemini Nano stages need the device model; on-device *code* (e.g. regex deid) does not.
+    out[m] = !!p && p.stages.some((s) => /^nano-/.test(s.id));
   }
   return out;
 }

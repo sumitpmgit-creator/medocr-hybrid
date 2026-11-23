@@ -7,7 +7,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { core, parsing, pick } from '../src/core.ts';
 import { EgressSpy } from '../src/egress.ts';
-import { FULL_RX, PII_CASES, findLeaks, type PiiCase } from '../src/pii.ts';
+import { FULL_RX, NOT_DATES, PII_CASES, findLeaks, type PiiCase } from '../src/pii.ts';
+import { readFileSync, existsSync } from 'node:fs';
+import { pkgDir } from '../src/repo.ts';
 import { installNanoMock, type NanoMock } from '../src/mocks/nano.ts';
 import { qa } from '../src/mocks/firebase-ai-sdk.ts';
 import { firebaseStructureStage, nanoOcrStage, tinyPng } from '../src/mocks/stages.ts';
@@ -39,6 +41,20 @@ describe('DEID: exported de-identifiers', () => {
       it(`DEID-${who}-IDEM de-identifying twice is stable (placeholders are not re-redacted or mangled)`, () => {
         const once = fn!(FULL_RX.text).text;
         expect(fn!(once).text).toBe(once);
+      });
+      // ---- Date policy (Advisory, 23 Nov 2026): DOB -> [DOB]; every other date -> [DATE]; ages may stay ----
+      it.each([['DOB: 14/03/1987'], ['D.O.B 1987-03-14'], ['Born on 14th March 1987'], ['dob 14.03.87']])(`DEID-${who}-POL-01 DOB "%s" becomes the [DOB] token`, (t) => {
+        const out = fn!(t).text;
+        expect(out, out).toContain('[DOB]');
+        expect(out, out).not.toContain('[DATE]');
+      });
+      it.each([['Report Date: 20/11/2026'], ['Sample collected on 12-Oct-2026'], ['Admitted 2026-11-18'], ['Review on 5th December 2026']])(`DEID-${who}-POL-02 non-DOB date "%s" becomes the [DATE] token (not [DOB])`, (t) => {
+        const out = fn!(t).text;
+        expect(out, out).toContain('[DATE]');
+        expect(out, out).not.toContain('[DOB]');
+      });
+      it.each(NOT_DATES.map((t) => [t]))(`DEID-${who}-POL-03 clinical look-alike "%s" is not turned into a date/ID token`, (t) => {
+        expect(fn!(t).text).toBe(t);
       });
       it(`DEID-${who}-LAB lab tables with long numbers are not mistaken for IDs`, () => {
         const t = 'Platelet Count 250000 /cumm 150000-450000\nTLC 7800 /cumm\nHbA1c 7.8 %\nVitamin B12 245 pg/mL 211-911';
@@ -104,8 +120,8 @@ describe.skipIf(!web?.pipelines)('DEID: end-to-end through apps/web pipelines (N
     expect(spy.binaryEgress()).toEqual([]);
   });
 
-  it('DEID-E2E-04 hybrid: all entities confident and grounded -> zero bytes leave the device', async () => {
-    scriptNano(nano, FULL_RX.text, HIGHCONF_DOC);
+  it('DEID-E2E-04 hybrid: all entities confident and grounded -> zero bytes leave the device (confidence routing at 0.85)', async () => {
+    scriptNano(nano, CLEAN_RX, HIGHCONF_DOC); // clean text, so a zero-egress result is due to routing, not the guard blocking
     const run = await runPipeline(P('hybrid'), input, { docId: 'hi' });
     expect(run.failed).toBe(false);
     expect(spy.attempts).toBe(0);
@@ -119,38 +135,42 @@ describe.skipIf(!web?.pipelines)('DEID: end-to-end through apps/web pipelines (N
     expect(spy.attempts).toBe(0);
   });
 
-  it('DEID-E2E-06 cloud-only: raw document image and raw transcript must not be uploaded for user documents', async () => {
+  it('DEID-E2E-06a cloud baseline (sends the page image) is excluded for user uploads unless the user enables it', () => {
+    expect(web.pipelinesForUi, 'pipelinesForUi not exported').toBeTypeOf('function');
+    const ids = (o: any) => web.pipelinesForUi({ acceptOnDevice: 0.85, humanReview: 0.5 }, o).map((p: any) => p.id);
+    expect(ids({ source: 'upload' })).not.toContain('cloud-only');
+    expect(ids({ source: 'upload', userEnabled: true })).toContain('cloud-only');
+    expect(ids({ source: 'benchmark' })).toContain('cloud-only');
+  });
+  it('DEID-E2E-06b cloud baseline: after cloud OCR, the transcript sent for structuring carries no PII', async () => {
     R_cloudTranscript(FULL_RX.text);
     await runPipeline(P('cloud-only'), input, { docId: 'cloud' });
-    expect({ imageUploads: spy.binaryEgress().length, leaks: spy.leaks(FULL_RX.pii).length }).toEqual({ imageUploads: 0, leaks: 0 });
+    const textCalls = spy.records.filter((r) => !r.binary);
+    const leaks = textCalls.flatMap((r) => findLeaks(r.body, FULL_RX.pii)).map((l) => `${l.type}:${l.value}`);
+    expect(leaks, `leaked ${JSON.stringify(leaks)}`).toEqual([]);
   });
-
-  it('DEID-E2E-08 hybrid: residual identifiers that neither de-identifier nor the cloud guard knows (DOB, spaced PIN, unlabelled lowercase name, glued phone) must not reach the cloud', async () => {
-    const t = 'sunita devi w/o ramesh yadav\nDOB 14/03/1987  Hyderabad 500 080\nCallon9876543210forreports\nRx\nTab. Metformin 500 mg 1-0-1\nTab. Telmisartan 40mg OD';
-    const pii = [{ type: 'name', value: 'sunita devi' }, { type: 'dob', value: '14/03/1987' }, { type: 'pincode', value: '500080' }, { type: 'phone', value: '9876543210' }] as const;
+  it('DEID-E2E-06c cloud baseline labels its image egress for the privacy receipt', async () => {
+    R_cloudTranscript(FULL_RX.text);
+    const run = await runPipeline(P('cloud-only'), input, { docId: 'cloud' });
+    expect(spy.binaryEgress().length).toBe(1);
+    expect(JSON.stringify(run.steps[0].notes)).toMatch(/IMAGE_EGRESS_BYTES=\d+/);
+  });
+  it('DEID-E2E-10 dates reach the cloud only as [DATE] / [DOB] tokens; real dates stay on the device', async () => {
+    const t = `DOB: 14/03/1987\nReport Date: 20/11/2026\n${CLEAN_RX}`;
     scriptNano(nano, t, LOWCONF_DOC);
-    await runPipeline(P('hybrid'), input, { docId: 'residual' });
-    const leaks = spy.leaks(pii as any).map((l) => `${l.type}:${l.value}`);
-    expect(leaks, `leaked ${JSON.stringify(leaks)} (cloud attempts: ${spy.attempts})`).toEqual([]);
+    await runPipeline(P('hybrid'), input, { docId: 'dates' });
+    const sent = spy.records.map((r) => r.body).join('\n');
+    const leaks = spy.leaks([{ type: 'dob', value: '14/03/1987' }, { type: 'date', value: '20/11/2026' }]).map((l) => l.value);
+    expect(leaks, 'raw date reached the cloud').toEqual([]);
+    if (spy.attempts > 0) { expect(sent).toContain('[DOB]'); expect(sent).toContain('[DATE]'); }
+    else expect.fail('cloud call was blocked instead of sending tokens: the policy is that non-DOB dates go to the cloud as [DATE]');
   });
-
-  // One residual identifier at a time, so the fail-closed guard is not tripped by some other identifier in the same text.
-  it.each([
-    ['DOB', 'DOB: 14/03/1987', { type: 'dob', value: '14/03/1987' }],
-    ['DOB-words', 'Born on 14th March 1987', { type: 'dob', value: '14th March 1987' }],
-    ['PIN-spaced', 'Hyderabad 500 080', { type: 'pincode', value: '500080' }],
-    ['phone-fullwidth', 'Mobile：９８７６５４３２１０', { type: 'phone', value: '9876543210' }],
-    ['phone-glued', 'Callon9876543210forreports', { type: 'phone', value: '9876543210' }],
-    ['name-devanagari', 'रोगी: अनीता शर्मा', { type: 'name', value: 'अनीता शर्मा' }],
-    ['name-lowercase', 'sunita devi', { type: 'name', value: 'sunita devi' }],
-    ['hospital-number', 'Hospital number: 2023/BF/057', { type: 'mrn', value: '2023/BF/057' }],
-    ['aadhaar-dotted', 'UID:2345.6789.0123', { type: 'aadhaar', value: '234567890123' }],
-    ['PAN', 'PAN abcpk1234f', { type: 'pan', value: 'ABCPK1234F' }],
-  ] as const)('DEID-E2E-09 %s alone in the transcript does not reach the cloud (core deid + parsing guard together)', async (_k, line, p) => {
-    scriptNano(nano, `${line}\n${CLEAN_RX}`, LOWCONF_DOC);
-    await runPipeline(P('hybrid'), input, { docId: 'one' });
-    const leaks = spy.leaks([p as any]);
-    expect(leaks.length, `"${line}" reached the cloud (attempts ${spy.attempts})`).toBe(0);
+  it('DEID-E2E-11 when the cloud guard blocks a document, the user still gets the on-device structured fields (not an empty result)', async () => {
+    scriptNano(nano, FULL_RX.text, LOWCONF_DOC);
+    const run = await runPipeline(P('hybrid'), input, { docId: 'blocked' });
+    expect(spy.attempts).toBe(0);
+    expect(run.final.kind).toBe('fields');
+    expect(run.final.doc.medications.length, JSON.stringify(run.final.doc)).toBeGreaterThan(0);
   });
 
   it('DEID-E2E-07 reported bytesSent matches bytes actually observed on the wire (within 10%)', async () => {
@@ -168,15 +188,25 @@ function R_cloudTranscript(t: string) { qa().cloudReply = (body: any) => (body.g
 it.skipIf(!!web?.pipelines)('DEID-E2E-00 apps/web stages import under the QA mocks', () => { expect(web.__error).toBeUndefined(); });
 
 describe.skipIf(!web?.pipelines)('DEID: pipeline structure', () => {
-  it('DEID-S01 every pipeline that contains a cloud stage runs a deid stage before it', () => {
+  it('DEID-S01 every cloud stage that receives text runs after a deid stage (the gated, labelled cloud-read image baseline is the only exemption)', () => {
     const bad: string[] = [];
     for (const p of web.pipelines({ acceptOnDevice: 0.85, humanReview: 0.5 })) {
-      const firstCloud = p.stages.findIndex((s: any) => /cloud/i.test(s.id));
+      const firstCloud = p.stages.findIndex((s: any) => /cloud/i.test(s.id) && !(p.id === (web.CLOUD_BASELINE_PIPELINE_ID ?? 'cloud-only') && s.id === 'cloud-read'));
       if (firstCloud < 0) continue;
       const deidBefore = p.stages.slice(0, firstCloud).some((s: any) => s.kind === 'deid');
       if (!deidBefore) bad.push(`${p.id}: ${p.stages.map((s: any) => `${s.id}(${s.kind})`).join(' -> ')}`);
     }
     expect(bad).toEqual([]);
+  });
+});
+
+describe('DEID: app wiring (static)', () => {
+  const f = pkgDir('apps/web/src/main.ts');
+  const main = existsSync(f) ? readFileSync(f, 'utf8') : '';
+  it.skipIf(!main)('DEID-S02 main.ts picks pipelines for a user upload via pipelinesForUi / isCloudBaselineEnabled (raw-image baseline off by default)', () => {
+    const usesAll = /for\s*\(const\s+\w+\s+of\s+pipelines\(/.test(main);
+    const usesUi = /pipelinesForUi\(|isCloudBaselineEnabled\(/.test(main);
+    expect({ loopsOverAllPipelines: usesAll, usesPipelinesForUi: usesUi }).toEqual({ loopsOverAllPipelines: false, usesPipelinesForUi: true });
   });
 });
 

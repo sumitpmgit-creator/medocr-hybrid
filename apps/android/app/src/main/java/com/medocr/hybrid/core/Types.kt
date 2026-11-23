@@ -156,11 +156,23 @@ data class StageContext(
     val config: Map<String, Any?>? = null,
 )
 
+/**
+ * Whether a stage may send a payload off the device.
+ * Mirrors core stage meta (`runtime: "cloud"` / `sendsDataOffDevice`).
+ * Every pipeline stage must declare [CLOUD] or [NONE].
+ */
+enum class StageEgress(val wire: String) {
+    CLOUD("cloud"),
+    NONE("none"),
+}
+
 interface Stage {
     val id: String
     val name: String
     val kind: StageKind
     val accepts: Set<String>
+    /** Required. "cloud" if this stage can send data off-device, otherwise "none". */
+    val egress: StageEgress
     suspend fun run(input: StageData, ctx: StageContext): StageResult
 }
 

@@ -84,10 +84,10 @@ describe.skipIf(!parsing.mod.fieldsBelowThreshold)('ROUTING: parsing fieldsBelow
   const ext = (o: Partial<any> = {}) => ({
     documentType: 'prescription', documentTypeConfidence: 0.95,
     rawText: 'Patient: Rajesh Kumar Mob 9876543210\nTab Zifi 200 mg BD 5 days',
-    medications: [{ name: 'Zifi', nameConfidence: 0.95, dose: '200 mg', doseConfidence: 0.69, frequency: 'BD', frequencyConfidence: 0.7, duration: null, durationConfidence: 0.9 }],
+    medications: [{ name: 'Zifi', nameConfidence: 0.95, dose: '200 mg', doseConfidence: 0.849, frequency: 'BD', frequencyConfidence: 0.85, duration: null, durationConfidence: 0.9 }],
     labResults: [], ...o,
   });
-  it('ROUTE-20 strict "<" threshold: 0.69 routed, 0.70 not routed', () => {
+  it('ROUTE-20 strict "<" threshold at the agreed 0.85: 0.849 routed, 0.85 not routed', () => {
     const paths = parsing.mod.fieldsBelowThreshold(ext()).map((f: any) => f.path);
     expect(paths).toContain('medications[0].dose');
     expect(paths).not.toContain('medications[0].frequency');
@@ -106,6 +106,9 @@ describe.skipIf(!parsing.mod.fieldsBelowThreshold)('ROUTING: parsing fieldsBelow
 });
 
 describe('ROUTING: core and parsing agree on the cloud threshold', () => {
+  it.skipIf(!C.DEFAULT_THRESHOLDS)('ROUTE-25 core default thresholds match the agreed policy: acceptOnDevice 0.85, humanReview 0.5', () => {
+    expect(C.DEFAULT_THRESHOLDS).toMatchObject({ acceptOnDevice: 0.85, humanReview: 0.5 });
+  });
   it.skipIf(!C.DEFAULT_THRESHOLDS || !parsing.mod.DEFAULT_CLOUD_ROUTE_THRESHOLD)('ROUTE-24 one routing threshold, not two (core acceptOnDevice vs parsing DEFAULT_CLOUD_ROUTE_THRESHOLD)', () => {
     expect(parsing.mod.DEFAULT_CLOUD_ROUTE_THRESHOLD).toBe(C.DEFAULT_THRESHOLDS.acceptOnDevice);
   });

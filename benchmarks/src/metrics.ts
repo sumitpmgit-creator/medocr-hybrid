@@ -1,8 +1,28 @@
 // Pure scoring functions. No I/O. Covered by test/metrics.test.ts.
 
-/** NFKC, lower-case, collapse whitespace. Applied to both hypothesis and reference. */
+const FRACTIONS: Record<string, string> = { '¼': '1/4', '½': '1/2', '¾': '3/4', '⅓': '1/3', '⅔': '2/3', '⅛': '1/8' };
+
+/**
+ * Text normalisation for CER/WER, applied identically to hypothesis and reference (README "Normalisation").
+ * - Unicode NFC (canonical only). NFKC is NOT used: it rewrites ½ to 1⁄2 and could alter Indic compatibility forms.
+ *   NFC unifies e.g. Bengali য় U+09DF with য + ় (U+09AF U+09BC), and Devanagari क़ U+0958 with क + ़.
+ * - Zero-width joiner/non-joiner, BOM and soft hyphen removed: they change glyph shaping (half forms), not the text read.
+ * - Typography folded: curly quotes to straight, dashes and minus to '-', fraction slash to '/', vulgar fractions to n/d.
+ * - Danda । and double danda ॥ get a following space, so "হবে।একই" and "হবে। একই" score the same.
+ * - Lower-case (affects Latin only; Bengali and Devanagari have no case). Whitespace runs, including newlines, collapse to one space.
+ * - Digits are NOT transliterated: Bengali ৬ and Latin 6 count as different characters.
+ */
 export function normalizeText(s: string): string {
-  return (s ?? '').normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+  return (s ?? '')
+    .normalize('NFC')
+    .replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, '')
+    .replace(/[‘’‛′]/g, "'").replace(/[“”„″]/g, '"')
+    .replace(/[‐-―−]/g, '-').replace(/\u2044/g, '/')
+    .replace(/[¼½¾⅓⅔⅛]/g, (c) => FRACTIONS[c])
+    .replace(/([।॥])/g, '$1 ')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /** Levenshtein distance over any indexable sequence (chars or word tokens). */
@@ -52,7 +72,7 @@ export function rate(c: EditCount[]): number | null {
 }
 
 function normKey(k: string): string {
-  return k.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  return k.normalize('NFC').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
 }
 
 /** Model bookkeeping, not document content: never scored. */

@@ -6,7 +6,7 @@
  * de-identification (`keep`, utility check against over-redaction).
  */
 
-export type PiiType = 'name' | 'phone' | 'aadhaar' | 'vid' | 'abha' | 'pan' | 'address' | 'pincode' | 'dob' | 'mrn' | 'email';
+export type PiiType = 'name' | 'phone' | 'aadhaar' | 'vid' | 'abha' | 'pan' | 'address' | 'pincode' | 'dob' | 'date' | 'mrn' | 'email';
 
 export interface PiiValue { type: PiiType; value: string }
 export interface PiiCase { id: string; title: string; text: string; pii: PiiValue[]; keep: string[] }
@@ -43,6 +43,11 @@ export const PII_CASES: PiiCase[] = [
   { id: 'D2', title: 'D.O.B ISO', text: 'D.O.B 1987-03-14', pii: [{ type: 'dob', value: '1987-03-14' }], keep: [] },
   { id: 'D3', title: 'DOB in words', text: 'Born on 14th March 1987', pii: [{ type: 'dob', value: '14th March 1987' }], keep: [] },
   { id: 'D4', title: 'DOB short dotted', text: 'dob 14.03.87', pii: [{ type: 'dob', value: '14.03.87' }], keep: [] },
+  // ---------- other calendar dates (policy 23 Nov: sent only as [DATE]) ----------
+  { id: 'DT1', title: 'report date dd/mm/yyyy', text: 'Report Date: 20/11/2026\nTSH 2.1 uIU/mL', pii: [{ type: 'date', value: '20/11/2026' }], keep: ['TSH', '2.1'] },
+  { id: 'DT2', title: 'sample date with month name', text: 'Sample collected on 12-Oct-2026 08:15', pii: [{ type: 'date', value: '12-Oct-2026' }], keep: [] },
+  { id: 'DT3', title: 'ISO admission date', text: 'Admitted 2026-11-18, discharged 2026-11-21', pii: [{ type: 'date', value: '2026-11-18' }, { type: 'date', value: '2026-11-21' }], keep: [] },
+  { id: 'DT4', title: 'follow-up date in words', text: 'Review on 5th December 2026', pii: [{ type: 'date', value: '5th December 2026' }], keep: [] },
   // ---------- MRN / hospital ids ----------
   { id: 'M1', title: 'MRN plain', text: 'MRN: 00123456\nPlatelets 2,50,000 /cumm', pii: [{ type: 'mrn', value: '00123456' }], keep: ['Platelets', '2,50,000'] },
   { id: 'M2', title: 'UHID with site code', text: 'UHID-BLR-2024-000981', pii: [{ type: 'mrn', value: 'UHID-BLR-2024-000981' }], keep: [] },
@@ -53,6 +58,17 @@ export const PII_CASES: PiiCase[] = [
   // ---------- email ----------
   { id: 'E1', title: 'email', text: 'Email rajesh.kumar87@gmail.com', pii: [{ type: 'email', value: 'rajesh.kumar87@gmail.com' }], keep: [] },
   { id: 'E2', title: 'obfuscated email', text: 'mail: rajesh.kumar87 [at] gmail [dot] com', pii: [{ type: 'email', value: 'rajesh.kumar87' }], keep: [] },
+];
+
+/** Numeric look-alikes that are clinical content, not dates: must survive de-identification unchanged. */
+export const NOT_DATES: string[] = [
+  'BP 120/80 mmHg',
+  'Tab. Ultracet 37.5/325 mg 1-0-1',
+  'Haemoglobin 13.5 g/dL 13.0-17.0',
+  'TSH 2.1 uIU/mL 0.4-4.0',
+  'Tab. Dolo 650 1/2-0-1/2 x 5 days',
+  'Age/Sex: 38Y/M',
+  'Platelets 2,50,000 /cumm 1.5-4.5 lakh',
 ];
 
 /** A realistic full prescription combining many identifiers. */
@@ -68,13 +84,14 @@ export const FULL_RX: PiiCase = {
     '1. Tab. Metformin 500 mg  1-0-1  x 30 days',
     '2. Tab. Telmisartan 40mg  OD  after food',
     'HbA1c 7.8 %',
+    'Date: 20/11/2026   Review after 2 weeks',
   ].join('\n'),
   pii: [
     { type: 'name', value: 'Rajesh Kumar' }, { type: 'dob', value: '14/03/1987' }, { type: 'phone', value: '9876543210' },
     { type: 'aadhaar', value: '234567890123' }, { type: 'mrn', value: 'UHID-BLR-2024-000981' },
-    { type: 'address', value: 'Shanti Apartments' }, { type: 'pincode', value: '560038' },
+    { type: 'address', value: 'Shanti Apartments' }, { type: 'pincode', value: '560038' }, { type: 'date', value: '20/11/2026' },
   ],
-  keep: ['Metformin', '500 mg', '1-0-1', 'Telmisartan', '40mg', 'HbA1c', '7.8'],
+  keep: ['Metformin', '500 mg', '1-0-1', 'Telmisartan', '40mg', 'HbA1c', '7.8', '38Y/M'],
 };
 
 export const ALL_PII: PiiValue[] = [...PII_CASES, FULL_RX].flatMap((c) => c.pii);
@@ -143,7 +160,7 @@ export function findLeaks(payload: string, pii: PiiValue[] = ALL_PII): LeakFindi
       const av = alnum(p.value);
       if (av.length >= 6 && a.includes(av)) { add(p, 'alnum'); continue; }
       const dv = digits(p.value);
-      if (p.type !== 'name' && p.type !== 'address' && p.type !== 'email' && dv.length >= 6 && d.includes(dv)) { add(p, 'digits'); continue; }
+      if (p.type !== 'name' && p.type !== 'address' && p.type !== 'email' && p.type !== 'date' && p.type !== 'dob' && dv.length >= 6 && d.includes(dv)) { add(p, 'digits'); continue; }
       if (p.type === 'name') {
         const tokens = p.value.split(/[\s.]+/u).filter((t) => t.length >= 4);
         if (tokens.some((t) => new RegExp(`(^|[^\\p{L}])${t.toLowerCase()}($|[^\\p{L}])`, 'u').test(lower))) add(p, 'name-token');

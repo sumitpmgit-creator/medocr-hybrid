@@ -29,7 +29,7 @@ export const PHI_RULES: { type: PhiType; rule: string; re: RegExp; group?: numbe
 const EMPTY = /^(?:-+|n\/?a|nil|none|null|\[[^\]]*\]|_+|\.+)$/i;
 
 export function tokens(s: string): string[] {
-  return s.normalize('NFKC').toLowerCase().replace(/[’']/g, '').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return s.normalize('NFC').replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, '').toLowerCase().replace(/[’']/g, '').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 }
 
 function cleanValue(type: PhiType, v: string): string {

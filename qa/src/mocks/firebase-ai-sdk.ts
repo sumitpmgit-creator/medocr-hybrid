@@ -57,10 +57,10 @@ export function getGenerativeModel(_ai: unknown, params: any = {}) {
     return { response: { text: () => text, inferenceSource: 'on_device' as const } };
   }
 
-  async function cloud(parts: any[]) {
+  async function cloud(parts: any[], signal?: AbortSignal) {
     const body = { model: inCloud.model, contents: [{ role: 'user', parts }], generationConfig: inCloud.generationConfig };
     const json = JSON.stringify(body);
-    const res = await fetch(`https://firebasevertexai.googleapis.com/v1beta/projects/qa/models/${inCloud.model ?? 'unknown'}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: json });
+    const res = await fetch(`https://firebasevertexai.googleapis.com/v1beta/projects/qa/models/${inCloud.model ?? 'unknown'}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: json, signal });
     await res.json();
     const text = R.cloudReply ? R.cloudReply(body) : '{}';
     R.calls.push({ mode, source: 'in_cloud', body });
@@ -70,14 +70,15 @@ export function getGenerativeModel(_ai: unknown, params: any = {}) {
   return {
     mode,
     async initializeDeviceModel(onProgress?: (p: number) => void) { onProgress?.(1); },
-    async generateContent(req: AnyPart | AnyPart[]) {
+    async generateContent(req: AnyPart | AnyPart[], requestOptions?: { signal?: AbortSignal; timeout?: number }) {
+      const signal = requestOptions?.signal;
       const parts = toParts(req);
       const avail = R.nano ? await R.nano.availability() : 'unavailable';
       switch (mode) {
         case InferenceMode.ONLY_ON_DEVICE: return onDevice(parts);
-        case InferenceMode.PREFER_ON_DEVICE: return avail === 'available' ? onDevice(parts) : cloud(parts);
-        case InferenceMode.PREFER_IN_CLOUD: try { return await cloud(parts); } catch (e) { if (avail === 'available') return onDevice(parts); throw e; }
-        default: return cloud(parts);
+        case InferenceMode.PREFER_ON_DEVICE: return avail === 'available' ? onDevice(parts) : cloud(parts, signal);
+        case InferenceMode.PREFER_IN_CLOUD: try { return await cloud(parts, signal); } catch (e) { if (avail === 'available') return onDevice(parts); throw e; }
+        default: return cloud(parts, signal);
       }
     },
   };

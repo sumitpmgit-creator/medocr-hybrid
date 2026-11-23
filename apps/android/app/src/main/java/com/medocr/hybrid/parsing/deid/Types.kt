@@ -2,49 +2,18 @@
 package com.medocr.hybrid.parsing.deid
 
 /**
- * Kotlin mirror of packages/parsing/src/deid/types.ts.
- * Dates are not classified as PII (SoalTech handoff, 23 Nov 2026).
+ * Compatibility aliases. The source of truth is [com.medocr.hybrid.core.deid]
+ * (packages/core/src/deid.ts).
  */
-
-enum class RedactionType(val wire: String) {
-    NAME("name"),
-    ABHA("abha"),
-    PHONE("phone"),
-    ADDRESS("address"),
-    REG_NO("reg_no"),
-    EMAIL("email"),
-    AADHAAR("aadhaar"),
-    UHID("uhid");
-}
-
-data class Redaction(
-    val type: RedactionType,
-    /** Inclusive start offset in the original (pre-redaction) string. */
-    val start: Int,
-    /** Exclusive end offset in the original (pre-redaction) string. */
-    val end: Int,
-)
+typealias PhiType = com.medocr.hybrid.core.deid.PhiType
+typealias RedactionType = com.medocr.hybrid.core.deid.PhiType
+typealias PhiSpan = com.medocr.hybrid.core.deid.PhiSpan
+typealias Redaction = com.medocr.hybrid.core.deid.PhiSpan
 
 data class DeidentifyResult(
     val text: String,
-    val redactions: List<Redaction>,
+    val redactions: List<PhiSpan>,
+    val total: Int = redactions.size,
 )
 
-val PLACEHOLDERS: Map<RedactionType, String> = mapOf(
-    RedactionType.NAME to "[NAME]",
-    RedactionType.ABHA to "[ABHA]",
-    RedactionType.PHONE to "[PHONE]",
-    RedactionType.ADDRESS to "[ADDRESS]",
-    RedactionType.REG_NO to "[REG_NO]",
-    RedactionType.EMAIL to "[EMAIL]",
-    RedactionType.AADHAAR to "[AADHAAR]",
-    RedactionType.UHID to "[UHID]",
-)
-
-val PLACEHOLDER_VALUES: Set<String> = PLACEHOLDERS.values.toSet()
-
-fun redactionCounts(redactions: List<Redaction>): Map<RedactionType, Int> {
-    val out = linkedMapOf<RedactionType, Int>()
-    for (r in redactions) out[r.type] = (out[r.type] ?: 0) + 1
-    return out
-}
+fun redactionCounts(redactions: List<PhiSpan>) = com.medocr.hybrid.core.deid.redactionCounts(redactions)

@@ -206,6 +206,19 @@ describe.skipIf(!C.costUsd)('SCORING: cost model', () => {
     let v: unknown; try { v = C.costUsd('gemini-unknown', 1e6, 1e6); } catch { v = 'threw'; }
     expect(v).not.toBe(0);
   });
+  it('SCORE-63 apps/web cloud structuring records the token usage the SDK returns (needed for cost)', async () => {
+    const { EgressSpy } = await import('../src/egress.ts');
+    const { installNanoMock } = await import('../src/mocks/nano.ts');
+    const { qa } = await import('../src/mocks/firebase-ai-sdk.ts');
+    let web: any; try { web = await import('../../apps/web/src/stages.ts'); } catch { return; }
+    const spy = new EgressSpy().install().respond(() => ({}));
+    const nano = installNanoMock(); const R = qa(); R.nano = nano; R.cloudReply = () => '{"documentType":"prescription","medications":[],"labResults":[]}';
+    try {
+      const r = await web.cloudStructure.run({ kind: 'text', text: 'Rx\nTab. Metformin 500 mg 1-0-1' }, { runId: 'r', docId: 'd' });
+      expect(r.site).toBe('in_cloud');
+      expect(r.metrics.inputTokens ?? 0, 'SDK usageMetadata.promptTokenCount was dropped').toBeGreaterThan(0);
+    } finally { spy.uninstall(); nano.uninstall(); }
+  });
   it('SCORE-62 on-device cost is 0', () => {
     expect(C.costUsd('gemini-nano-on-device', 1e6, 1e6)).toBe(0);
   });

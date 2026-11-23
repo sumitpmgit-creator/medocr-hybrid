@@ -1,0 +1,8 @@
+{
+  "_comment": "Documents excluded from benchmark runs, by dataset path. Every exclusion needs a reason. Loaded by src/dataset.ts; counts are recorded in each results JSON and RESULTS.md.",
+  "datasets/bilingual-prescriptions": [
+    { "id": "bmpd-1-0063", "reason": "conflicting_annotations: two different CSV transcriptions for 0063 (near-identical wording, punctuation variants); decided by Advisory 2026-11-23" },
+    { "id": "bmpd-1-0185", "reason": "conflicting_annotations: two CSV transcriptions for 0185 with different medications; decided by Advisory 2026-11-23" },
+    { "id": "bmpd-1-0525", "reason": "conflicting_annotations: two CSV transcriptions for 0525 with different medications; decided by Advisory 2026-11-23" }
+  ]
+}

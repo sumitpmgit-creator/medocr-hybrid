@@ -54,7 +54,7 @@ Requirements, from the official docs (updated 2026-11-18):
   - **Pixel 9 / 9 Pro / 9 Pro XL / 9 Pro Fold** (Nano 3)
   - **Pixel 10 / 10 Pro / 10 Pro XL / 10 Pro Fold** and **Pixel 11** series (Nano 4)
   - **Samsung** Galaxy S25 / S26 families, Z Flip7/8, Z Fold7/8, Tab S12, Z TriFold
-- The app must be in the foreground; only English and Korean are validated on Android.
+- The app must be in the foreground. This demo validates English only (`ANDROID_VALIDATED_LANGUAGES = ["en"]`); Korean and other languages are supported later.
 - On-device request limit on Android is **4000 tokens** (tighter than the 9216-token window documented for the web hybrid path).
 - Unlocked bootloaders are not supported.
 - After a factory reset, give AICore time to initialise.
@@ -123,7 +123,7 @@ On-device structured output on **Android** uses `@Generable`, not the web `respo
 
 - **OCR prompt:** the web app’s `apps/web/src/stages.ts` `READ_PROMPT` still asks the model to replace identifiers with `[REDACTED]` (FINDINGS B3). This Android app does **not** — OCR is verbatim; de-id is a later stage.
 - **Token window:** parsing records `NANO_MAX_TOKENS = 9216` (web docs). Android hybrid docs state a **4000**-token on-device request limit (`ANDROID_NANO_MAX_TOKENS`).
-- **Languages:** parsing lists `en, ja, es, de, fr` (Chrome Prompt API). Android on-device inference is only validated for **English and Korean**.
+- **Languages:** parsing lists `en, ja, es, de, fr` (Chrome Prompt API). This demo validates **English only**. Firebase also documents Korean (`ko`) as a validated on-device language; `ko` and other languages are supported later.
 - **Cost placeholders:** `packages/core/src/cost.ts` still prices `gemini-3.5-flash-lite` at $0. Android display cost uses `benchmarks/pricing.json`.
 - **Schema subset:** Nano extraction (`packages/parsing` prompt/schema) omits `discharge_summary` (maps to `other`) and several ClinicalDoc fields (`genericName`, `route`, `flag`, …). The structure stage here follows the web app and `packages/core/src/schema.ts` (full ClinicalDoc).
 - **assertSafeForCloud** lives in `packages/parsing/src/deid`, not `packages/core`. The Android gate mirrors the parsing module. `packages/core/src/deid.ts` is a smaller regex net; both are ported, and the pipeline uses the parsing gate.

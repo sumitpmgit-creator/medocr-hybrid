@@ -27,7 +27,7 @@ import {
   setMockCloudBehavior,
 } from './mock';
 import { buildPrivacyReceipt } from './receipt';
-import { STRUCTURE_PROMPT } from './stages';
+import { deidStage, STRUCTURE_PROMPT } from './stages';
 
 const ctx: StageContext = { runId: 'bug-012', docId: 'deid-e2e-07' };
 const cleanText = { kind: 'text' as const, text: CLEAN_CLOUD_TRANSCRIPT };
@@ -79,7 +79,7 @@ describe('BUG-012: bytes sent from the serialized request body plus headers', ()
     expect(result.metrics.bytesSent).toBe(expected);
 
     const run = await runPipeline(
-      { id: 'hybrid', name: 'structure only', stages: [mockCloudStructure] },
+      { id: 'hybrid', name: 'structure only', stages: [deidStage, mockCloudStructure] },
       cleanText,
       { docId: 'deid-e2e-07' },
     );

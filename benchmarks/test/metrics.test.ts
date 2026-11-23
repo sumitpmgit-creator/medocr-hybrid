@@ -64,3 +64,14 @@ test('field scoring on core ClinicalDoc shape', () => {
   assert.equal(r.total, 6); // documentType, strength, frequency, route, value, unit
   assert.equal(r.correct, 6);
 });
+
+import { normalizeText } from '../src/metrics.ts';
+test('bilingual normalisation: NFC, joiners, danda spacing, typography; digits not transliterated', () => {
+  assert.equal(normalizeText('\u09DF'), normalizeText('\u09AF\u09BC'));          // Bengali YYA composed vs decomposed
+  assert.equal(normalizeText('\u0958'), normalizeText('\u0915\u093C'));          // Devanagari QA
+  assert.equal(normalizeText('ক্\u200Dষ'), normalizeText('ক্ষ'));                 // ZWJ dropped
+  assert.equal(normalizeText('হবে।একই'), normalizeText('হবে। একই'));
+  assert.equal(normalizeText('½ tab – “BD”'), '1/2 tab - "bd"');
+  assert.notEqual(normalizeText('৬'), normalizeText('6'));
+  assert.deepEqual(charErrors('Line one\n  line TWO', 'line one line two'), { edits: 0, refLen: 17 });
+});

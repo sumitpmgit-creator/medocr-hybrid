@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "kind": "benchmark",
-  "started_at": "2026-11-23T10:04:33.290Z",
-  "finished_at": "2026-11-23T10:04:35.312Z",
+  "started_at": "2026-11-23T10:22:09.242Z",
+  "finished_at": "2026-11-23T10:22:11.195Z",
   "argv": [
     "--driver",
     "browser",
     "--dataset",
-    "datasets/amr"
+    "datasets/ekacare"
   ],
   "environment": {
     "node": "v24.22.1",
@@ -20,17 +20,13 @@
     "headless": false,
     "pipelines": {
       "device": "On-device only (Nano): nano-read → nano-structure",
-      "cloud": "Cloud structure (gemini-3.5-flash-lite; OCR stays on-device): nano-read → deid → cloud-structure",
-      "hybrid": "Hybrid (Nano + de-identified cloud verify): nano-read → nano-structure → deid → cloud-verify"
+      "cloud": "Cloud baseline (sends the image): cloud-read → deid → cloud-structure",
+      "hybrid": "Hybrid (Nano read + de-identified cloud structure): nano-read → deid → cloud-structure"
     }
   },
   "dataset": {
-    "path": "datasets/amr",
-    "manifest_sha256": "cfed1f27e52b5b2ac96ebf735db2a0e6580839c592df8a1fefccbcbae2a46067",
-    "n_samples": 3,
-    "limit": null,
-    "with_reference_text": 3,
-    "with_fields": 0
+    "path": "datasets/ekacare",
+    "error": "dataset not imported"
   },
   "pricing": {
     "source": "https://ai.google.dev/gemini-api/docs/pricing (Gemini Developer API, the backend Firebase AI Logic's GoogleAIBackend bills through)",
@@ -73,6 +69,10 @@
       "status": "NOT RUN",
       "blockers": [
         {
+          "reason": "/workspace/med-ocr/datasets/ekacare/manifest.jsonl not found (dir contains: DATASET_CARD.md, README.md, dataset.json). The EkaCare images and ground truth have not been imported yet. Run `HF_TOKEN=hf_... python3 scripts/import_datasets.py ekacare --limit 20` (needs pyarrow) after clicking \"Agree\" on the gated HF page ekacare/medical_records_parsing_validation_set.",
+          "owner": "Rachel (datasets/); the gated HF terms need an account that has clicked Agree"
+        },
+        {
           "reason": "Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = \"unavailable\"",
           "owner": "Sumit (needs an eligible machine) — see README hardware requirements"
         }
@@ -82,8 +82,8 @@
       "status": "NOT RUN",
       "blockers": [
         {
-          "reason": "Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = \"unavailable\" (the cloud-only pipeline now runs OCR on-device: Cloud structure (gemini-3.5-flash-lite; OCR stays on-device): nano-read → deid → cloud-structure)",
-          "owner": "Sumit (needs an eligible machine) — see README hardware requirements"
+          "reason": "/workspace/med-ocr/datasets/ekacare/manifest.jsonl not found (dir contains: DATASET_CARD.md, README.md, dataset.json). The EkaCare images and ground truth have not been imported yet. Run `HF_TOKEN=hf_... python3 scripts/import_datasets.py ekacare --limit 20` (needs pyarrow) after clicking \"Agree\" on the gated HF page ekacare/medical_records_parsing_validation_set.",
+          "owner": "Rachel (datasets/); the gated HF terms need an account that has clicked Agree"
         },
         {
           "reason": "app reports cloud unavailable: Firebase web config missing: apps/web/.env.local not filled (see apps/web/.env.example)",
@@ -94,6 +94,10 @@
     "hybrid": {
       "status": "NOT RUN",
       "blockers": [
+        {
+          "reason": "/workspace/med-ocr/datasets/ekacare/manifest.jsonl not found (dir contains: DATASET_CARD.md, README.md, dataset.json). The EkaCare images and ground truth have not been imported yet. Run `HF_TOKEN=hf_... python3 scripts/import_datasets.py ekacare --limit 20` (needs pyarrow) after clicking \"Agree\" on the gated HF page ekacare/medical_records_parsing_validation_set.",
+          "owner": "Rachel (datasets/); the gated HF terms need an account that has clicked Agree"
+        },
         {
           "reason": "Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = \"unavailable\"",
           "owner": "Sumit (needs an eligible machine) — see README hardware requirements"

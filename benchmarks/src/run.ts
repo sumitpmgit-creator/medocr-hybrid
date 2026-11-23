@@ -5,7 +5,7 @@ import { join, resolve, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import os from 'node:os';
-import { loadDataset, mimeOf, DatasetUnavailable, type Sample } from './dataset.ts';
+import { loadDataset, loadExclusions, mimeOf, DatasetUnavailable, type Sample } from './dataset.ts';
 import { charErrors, wordErrors, rate, scoreFields, percentile, mean } from './metrics.ts';
 import { loadPricing, costOf } from './cost.ts';
 import { extractPhi, findLeaks, maskValue } from './phi.ts';
@@ -78,9 +78,12 @@ const result: any = {
 let samples: Sample[] = [];
 let datasetBlocker: Blocker | null = null;
 try {
-  const d = loadDataset(datasetDir, limit);
+  const exclusions = selfTest ? [] : loadExclusions(join(BENCH, 'exclusions.json'), relative(ROOT, datasetDir));
+  const d = loadDataset(datasetDir, limit, exclusions);
   samples = d.samples;
-  Object.assign(result.dataset, { manifest_sha256: d.manifestSha256, n_samples: samples.length, limit: limit ?? null,
+  for (const x of d.excluded) if (!x.found) console.warn(`warning: exclusion ${x.id} not found in ${relative(ROOT, datasetDir)}`);
+  Object.assign(result.dataset, { manifest_sha256: d.manifestSha256, manifest_records: d.manifestCount, excluded: d.excluded, n_samples: samples.length, limit: limit ?? null,
+    without_reference: samples.filter((s) => !s.reference_text).map((s) => ({ id: s.id, reference_type: s.reference_type ?? null })),
     with_reference_text: samples.filter((s) => s.reference_text).length, with_fields: samples.filter((s) => s.fields).length });
 } catch (e) {
   if (!(e instanceof DatasetUnavailable)) throw e;
@@ -187,6 +190,7 @@ for (const mode of modes) {
   const summary = {
     deid: deidSummary,
     docs: per.length, docs_ok: ok.length, errors: per.length - ok.length,
+    cer_wer_docs_scored: ok.filter((p) => p.char).length,
     cer: rate(ok.filter((p) => p.char).map((p) => p.char)),
     wer: rate(ok.filter((p) => p.word).map((p) => p.word)),
     field_accuracy: fTot ? ok.reduce((t, p) => t + (p.fields?.correct ?? 0), 0) / fTot : null,

@@ -129,7 +129,7 @@ fun CaptureScreen(state: UiState, viewModel: MedOcrViewModel, modifier: Modifier
             onClick = { viewModel.extract() },
             enabled = !state.busy && state.document != null,
             modifier = Modifier.fillMaxWidth(),
-        ) { Text(if (state.busy) "Running…" else "Extract (on-device, cloud, hybrid)") }
+        ) { Text(if (state.busy) "Running…" else "Extract (on-device + hybrid)") }
     }
 }
 

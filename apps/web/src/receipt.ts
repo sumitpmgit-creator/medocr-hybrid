@@ -6,6 +6,7 @@
 import type { ExecutionSite, PipelineRun, StageResult } from '@med-ocr/core';
 import { usageFromRun, type UsageView } from './accounting';
 import { CLOUD_MODEL } from './firebase';
+import { fieldsSentToCloudFromNotes } from './hybrid-verify-logic';
 
 export const ON_DEVICE_MODEL = 'gemini-nano';
 
@@ -46,6 +47,8 @@ export interface PrivacyReceipt {
   imagesStayLocal: boolean;
   /** Bytes of page-image payload that left the device (0 if none). */
   imageBytesSent: number;
+  /** Mid-confidence fields whose de-identified snippets were sent to the cloud. */
+  fieldsSentToCloud: number;
 }
 
 export function buildPrivacyReceipt(
@@ -84,6 +87,7 @@ export function buildPrivacyReceipt(
     deid: deidSummaryFromNotes(notes),
     imagesStayLocal: !leftDevice.some((item) => item.kind === 'page-image'),
     imageBytesSent: leftDevice.filter((item) => item.kind === 'page-image').reduce((sum, item) => sum + item.bytes, 0),
+    fieldsSentToCloud: fieldsSentToCloudFromNotes(notes) ?? 0,
   };
 }
 

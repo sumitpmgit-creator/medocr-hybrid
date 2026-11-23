@@ -58,13 +58,13 @@ class PipelineDeidTest {
     }
 
     @Test
-    fun hybridVerifyCloudPromptIsDeidentified() = runBlocking {
+    fun hybridCloudStructurePromptIsDeidentified() = runBlocking {
         val client = RecordingClient()
         val pipes = pipelines(DEFAULT_THRESHOLDS, client)
         runPipeline(pipes[2], StageData.Image(tinyJpeg()), "doc-1")
         // On-device structure does not hit the cloud. Verify (and only verify) should.
         val verifyPrompts = client.cloudPrompts.filter { it.contains("Only return entries") }
-        assertTrue("low-confidence mock med should be sent to cloud verify", verifyPrompts.isNotEmpty())
+        assertTrue("low-confidence mock med should be sent to cloud-structure as snippets", verifyPrompts.isNotEmpty())
         for (p in verifyPrompts) {
             assertFalse("cloud prompt must not contain the raw phone", p.contains("98765"))
             assertFalse("cloud prompt must not contain the patient name", p.contains("Ravi Kumar"))

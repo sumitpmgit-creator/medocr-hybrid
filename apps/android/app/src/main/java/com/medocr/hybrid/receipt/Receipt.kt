@@ -113,6 +113,8 @@ fun buildPrivacyReceipt(
             append("Cloud model: $cloudModel. ")
         }
         append("On-device de-id removed $deidTotal identifier(s) ($typeList).")
+        if (fields.isEmpty()) append(" No fields were sent to the cloud.")
+        else append(" Sent ${fields.size} field(s) to the cloud as de-identified snippets: ${fields.joinToString(", ")}.")
     }
     val caveats = buildList {
         add("De-id details are counts and types only; original values are never written to this receipt.")

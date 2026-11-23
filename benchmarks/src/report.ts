@@ -8,6 +8,7 @@ const bytes = (x: number | null | undefined) => (x === null || x === undefined ?
 
 const DATASET_NOTE: Record<string, string> = {
   'datasets/amr': 'African Medical Records (CC-BY-4.0), hand-transcribed → CER/WER. No structured labels, so field accuracy is blank.',
+  'datasets/bilingual-prescriptions': 'Image-to-Text Bilingual Dataset from Medical Prescriptions, Mendeley v1 (DOI 10.17632/tg2hm7n2bs.1, CC-BY-4.0; Badhon et al., Bangabandhu Sheikh Mujibur Rahman Digital University). Handwritten prescriptions from Gazipur, Bangladesh, in Bangla and English. CER/WER are scored against the English `reference_text`. CAVEAT: the source CSV calls these "descriptions"/"captions" ("Dexa U tablet should be taken twice daily…"), not verbatim transcriptions, so CER/WER here measure distance from a normalised caption, not pure OCR error. Do not compare them with AMR numbers.',
   'datasets/ekacare': 'EkaCare medical records parsing set (MIT, gated). Images + rubrics only, no transcriptions → no CER/WER; used for latency, cost, bytes sent, and field checks where labels exist.',
 };
 
@@ -29,20 +30,26 @@ export function renderResultsMd(r: any, jsonRel: string): string {
   L.push(`Source: [\`${jsonRel}\`](${jsonRel})`, '');
   L.push(`- Run: ${r.started_at} → ${r.finished_at} (UTC)`);
   L.push(`- Dataset: \`${r.dataset.path}\` — ${r.dataset.n_samples ?? 0} documents${r.dataset.manifest_sha256 ? ` (manifest sha256 \`${r.dataset.manifest_sha256.slice(0, 12)}\`)` : ''}${r.dataset.error ? ` — **${r.dataset.error}**` : ''}`);
+  if (r.dataset.manifest_records !== undefined) {
+    const ex = r.dataset.excluded ?? [];
+    L.push(`- Manifest records: ${r.dataset.manifest_records}; excluded: ${ex.length}${ex.length ? ` (${ex.map((x: any) => `\`${x.id}\` — ${x.reason.split(':')[0]}`).join('; ')}; see \`benchmarks/exclusions.json\`)` : ''}; loaded: ${r.dataset.n_samples}`);
+    const nr = r.dataset.without_reference ?? [];
+    L.push(`- With a reference transcription (eligible for CER/WER): ${r.dataset.with_reference_text ?? 0}${nr.length ? `; no reference: ${nr.map((x: any) => `\`${x.id}\`${x.reference_type ? ` (reference_type ${x.reference_type})` : ''}`).join(', ')}` : ''}`);
+  }
   L.push(`- Driver: ${r.environment.driver}${r.environment.chrome ? ` (${r.environment.chrome})` : ''}; host: ${r.environment.os}, ${r.environment.cpus} CPUs, ${r.environment.ram_gb} GB RAM`);
   if (r.environment.pipelines && Object.keys(r.environment.pipelines).length) for (const m of MODES as Mode[]) if (r.environment.pipelines[m]) L.push(`- Pipeline for ${MODE_LABEL[m]}: ${r.environment.pipelines[m]}`);
   L.push('');
-  L.push('| Mode | Status | Docs | CER ↓ | WER ↓ | Field accuracy ↑ | Latency p50 | Latency p95 | Est. cost / doc | Est. cost / 1k docs | Bytes sent to cloud / doc | Errors |');
-  L.push('|---|---|---|---|---|---|---|---|---|---|---|---|');
+  L.push('| Mode | Status | Docs | CER/WER docs scored | CER ↓ | WER ↓ | Field accuracy ↑ | Latency p50 | Latency p95 | Est. cost / doc | Est. cost / 1k docs | Bytes sent to cloud / doc | Errors |');
+  L.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|');
   for (const m of MODES as Mode[]) {
     const x = r.modes[m];
     if (!x) continue;
     if (x.status !== 'RAN') {
-      L.push(`| ${MODE_LABEL[m]} | **${x.status}** | — | — | — | — | — | — | — | — | — | — |`);
+      L.push(`| ${MODE_LABEL[m]} | **${x.status}** | — | — | — | — | — | — | — | — | — | — | — |`);
       continue;
     }
     const s = x.summary;
-    L.push(`| ${MODE_LABEL[m]} | RAN | ${s.docs_ok}/${s.docs} | ${pct(s.cer)} | ${pct(s.wer)} | ${pct(s.field_accuracy)} | ${ms(s.latency_ms_p50)} | ${ms(s.latency_ms_p95)} | ${usd(s.cost_usd_per_doc)} | ${usd(s.cost_usd_per_doc === null ? null : s.cost_usd_per_doc * 1000, 2)} | ${bytes(s.bytes_sent_per_doc)} | ${s.errors} |`);
+    L.push(`| ${MODE_LABEL[m]} | RAN | ${s.docs_ok}/${s.docs} | ${s.cer_wer_docs_scored ?? '—'} | ${pct(s.cer)} | ${pct(s.wer)} | ${pct(s.field_accuracy)} | ${ms(s.latency_ms_p50)} | ${ms(s.latency_ms_p95)} | ${usd(s.cost_usd_per_doc)} | ${usd(s.cost_usd_per_doc === null ? null : s.cost_usd_per_doc * 1000, 2)} | ${bytes(s.bytes_sent_per_doc)} | ${s.errors} |`);
   }
   L.push('');
   L.push('**De-identification leak check**: identifiers from the reference data (values masked; see README for the rules)', '');
@@ -78,7 +85,7 @@ function methodology(r: any): string[] {
   const L: string[] = [];
   if (!r) return L;
   L.push('## How each column is measured', '');
-  L.push('- **CER / WER**: Levenshtein edits ÷ reference length over NFKC-normalised, lower-cased, whitespace-collapsed text, micro-averaged over documents that have a `reference_text`. "—" means no document had one.');
+  L.push('- **CER / WER**: Levenshtein edits ÷ reference length over normalised text (NFC; zero-width joiners removed; quotes/dashes/fractions folded; space after danda; lower-cased; whitespace collapsed; see README "Normalisation"), micro-averaged over documents that have a `reference_text`. "—" means no document had one.');
   L.push('- **Field accuracy**: every leaf of the ground-truth `fields` JSON is one field; exact match after value normalisation (case, whitespace, trailing punctuation, numeric form). Missing = wrong; extra predicted fields are ignored. Micro-averaged.');
   L.push('- **Latency**: wall-clock per document as seen by the harness (nearest-rank p50/p95), documents run sequentially, failed documents excluded.');
   L.push(`- **Cost**: token counts reported by the pipeline (Firebase AI Logic \`usageMetadata\`) × rates in \`benchmarks/pricing.json\` — ${r.pricing.tier}, source ${r.pricing.source}, retrieved ${r.pricing.retrieved}. On-device calls are $0 API cost. "—" = cost unknown (no usage reported), never guessed.`);

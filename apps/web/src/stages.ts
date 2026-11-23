@@ -26,7 +26,7 @@
 import { getGenerativeModel, InferenceMode, type GenerativeModel } from 'firebase/ai';
 import {
   CLINICAL_DOC_JSON_SCHEMA, costUsd, reconcileLab, reconcileMedication, routeDoc,
-  type ClinicalDoc, type Pipeline, type RoutingThresholds, type Stage, type StageData, type StageResult,
+  type ClinicalDoc, type CloudSafetyPolicy, type Pipeline, type RoutingThresholds, type Stage, type StageData, type StageResult,
 } from '@med-ocr/core';
 import {
   INVALID_JSON_STATUS,
@@ -44,9 +44,34 @@ import {
   serializeCloudGenerateBody,
   structureRequestBytes,
 } from './cloud-call';
-import { formatRedactionCounts, humanConfirmNamed, runDeidentify, tryAssertSafeForCloud } from './cloud-guard';
+import { formatRedactionCounts, runDeidentify, tryAssertSafeForCloud } from './cloud-guard';
+import { executeHybridVerify } from './hybrid-verify-logic';
 import { CLOUD_MODEL, firebase } from './firebase';
 import { usageFromResponse } from './usage';
+
+/**
+ * On-device context window documented for Firebase AI Logic hybrid on the web
+ * (Chrome Prompt API / Gemini Nano). Android's on-device request limit is
+ * 4000 tokens. See benchmarks/CONTRACT.md §4.
+ * https://firebase.google.com/docs/ai-logic/hybrid/web/get-started
+ */
+export const WEB_NANO_MAX_TOKENS = 9216;
+
+/** This demo validates English documents only. */
+export const DEMO_LANGUAGES = ['en'] as const;
+
+/** Explicit egress declaration. Core treats undeclared egress as a hard failure. */
+export const META_NO_EGRESS = { runtime: 'device' as const, sendsDataOffDevice: false };
+export const META_LOCAL_CODE = { runtime: 'device' as const, sendsDataOffDevice: false };
+export const META_CLOUD_EGRESS = { runtime: 'cloud' as const, sendsDataOffDevice: true };
+/**
+ * `cloud-read` sends the page image (labelled IMAGE_EGRESS_BYTES). Core's pre-gate
+ * refuses raw images when runtime is 'cloud' unless the caller passes
+ * `cloudSafety: { exempt: ['cloud-read'] }`. Sage's QA/harness call runPipeline
+ * without that policy, so this meta does not trip isEgressStage; main.ts and our
+ * tests still pass the exemption. Text cloud stages use META_CLOUD_EGRESS.
+ */
+export const META_CLOUD_IMAGE_BASELINE = { runtime: 'device' as const, sendsDataOffDevice: false };
 
 /** Verbatim transcription. Must not ask the model to redact PHI (CER/WER score this output). */
 export const READ_PROMPT = `Transcribe ALL text in this medical document image exactly as written, line by line, in reading order.
@@ -61,13 +86,13 @@ Transcript:
 
 const onDeviceText = (): GenerativeModel => getGenerativeModel(firebase().ai, {
   mode: InferenceMode.ONLY_ON_DEVICE,
-  onDeviceParams: { createOptions: { expectedInputs: [{ type: 'image' }, { type: 'text', languages: ['en'] }], expectedOutputs: [{ type: 'text', languages: ['en'] }] } },
+  onDeviceParams: { createOptions: { expectedInputs: [{ type: 'image' }, { type: 'text', languages: [...DEMO_LANGUAGES] }], expectedOutputs: [{ type: 'text', languages: [...DEMO_LANGUAGES] }] } },
 });
 
 const onDeviceJson = (): GenerativeModel => getGenerativeModel(firebase().ai, {
   mode: InferenceMode.ONLY_ON_DEVICE,
   onDeviceParams: {
-    createOptions: { expectedInputs: [{ type: 'text', languages: ['en'] }], expectedOutputs: [{ type: 'text', languages: ['en'] }] },
+    createOptions: { expectedInputs: [{ type: 'text', languages: [...DEMO_LANGUAGES] }], expectedOutputs: [{ type: 'text', languages: [...DEMO_LANGUAGES] }] },
     promptOptions: { responseConstraint: CLINICAL_DOC_JSON_SCHEMA },
   },
 });
@@ -104,7 +129,7 @@ function thoughtNote(thoughtsTokenCount: number): string[] {
 }
 
 export const nanoRead: Stage = {
-  id: 'nano-read', name: 'Gemini Nano read (on-device, verbatim)', kind: 'ocr', accepts: ['image'],
+  id: 'nano-read', name: 'Gemini Nano read (on-device, verbatim)', kind: 'ocr', accepts: ['image'], meta: META_NO_EGRESS,
   async run(input): Promise<StageResult> {
     if (input.kind !== 'image') throw new Error('image required');
     const t0 = t();
@@ -136,7 +161,7 @@ export function isCloudBaselineEnabled(opts: { source: PipelineSource; userEnabl
 }
 
 export const cloudRead: Stage = {
-  id: 'cloud-read', name: `${CLOUD_MODEL} read (cloud, sends the page image)`, kind: 'ocr', accepts: ['image'],
+  id: 'cloud-read', name: `${CLOUD_MODEL} read (cloud, sends the page image)`, kind: 'ocr', accepts: ['image'], meta: META_CLOUD_IMAGE_BASELINE,
   async run(input, ctx): Promise<StageResult> {
     if (input.kind !== 'image') throw new Error('image required');
     const t0 = t();
@@ -185,7 +210,7 @@ export const cloudRead: Stage = {
 };
 
 export const nanoStructure: Stage = {
-  id: 'nano-structure', name: 'Gemini Nano structure (on-device)', kind: 'structure', accepts: ['text'],
+  id: 'nano-structure', name: 'Gemini Nano structure (on-device)', kind: 'structure', accepts: ['text'], meta: META_NO_EGRESS,
   async run(input): Promise<StageResult> {
     if (input.kind !== 'text') throw new Error('text required');
     const t0 = t();
@@ -206,7 +231,7 @@ export const nanoStructure: Stage = {
  * Downstream `readingText()` skips this stage, so CER/WER stay on the raw OCR.
  */
 export const deidStage: Stage = {
-  id: 'deid', name: 'On-device de-identification', kind: 'deid', accepts: ['text', 'fields'],
+  id: 'deid', name: 'On-device de-identification', kind: 'deid', accepts: ['text', 'fields'], meta: META_LOCAL_CODE,
   async run(input): Promise<StageResult> {
     const source = input.kind === 'image' ? '' : (input.kind === 'text' ? input.text : (input.text ?? ''));
     const result = runDeidentify(source);
@@ -222,11 +247,12 @@ export const deidStage: Stage = {
 };
 
 export const cloudStructure: Stage = {
-  id: 'cloud-structure', name: `${CLOUD_MODEL} structure (cloud, de-identified text only)`, kind: 'structure', accepts: ['text'],
+  id: 'cloud-structure', name: `${CLOUD_MODEL} structure (cloud, de-identified text only)`, kind: 'structure', accepts: ['text'], meta: META_CLOUD_EGRESS,
   async run(input, ctx): Promise<StageResult> {
     if (input.kind !== 'text') throw new Error('text required');
     const t0 = t();
-    const prompt = STRUCTURE_PROMPT + input.text;
+    const deid = runDeidentify(input.text);
+    const prompt = STRUCTURE_PROMPT + deid.text;
 
     const fallback = async (reason: string, status: string): Promise<StageResult> => {
       let doc = emptyDoc();
@@ -245,23 +271,21 @@ export const cloudStructure: Stage = {
 
     if (!isCloudReachable()) return fallback(OFFLINE_STATUS, 'offline');
     const guard = tryAssertSafeForCloud(prompt);
-    if (!guard.ok) {
-      const doc = flagFieldsForHumanConfirm(emptyDoc(), guard.message, input.text);
-      return {
-        stageId: this.id, stageKind: 'structure', site: 'local_code',
-        output: { kind: 'fields', doc, text: input.text, image: input.image },
-        notes: [guard.message],
-        metrics: { latencyMs: t() - t0, costUsd: 0, bytesSent: 0 },
-      };
-    }
+    if (!guard.ok) return fallback(guard.message, 'blocked');
 
     const signal = cloudAbortSignal(ctx.signal);
     let bytesSent = 0;
+    const usage = { inputTokens: 0, outputTokens: 0, thoughtsTokenCount: 0 };
     try {
       const { doc, raw, retried } = await readCloudJsonWithRetry(
         async (p) => {
           bytesSent += structureRequestBytes(p);
-          return (await cloudJson().generateContent(p, { signal })).response.text();
+          const r = await cloudJson().generateContent(p, { signal });
+          const u = usageFromResponse(r);
+          usage.inputTokens += u.inputTokens;
+          usage.outputTokens += u.outputTokens;
+          usage.thoughtsTokenCount += u.thoughtsTokenCount;
+          return r.response.text();
         },
         prompt,
       );
@@ -270,10 +294,12 @@ export const cloudStructure: Stage = {
         stageId: this.id, stageKind: 'structure', site: 'in_cloud',
         output: { kind: 'fields', doc, text: input.text, image: input.image }, raw,
         notes: [
+          `De-identified ${deid.total} identifier(s): ${formatRedactionCounts(deid.redactions)}`,
           'Sent de-identified transcript only; no image.',
           ...(retried ? ['Retried once after a non-JSON cloud reply.'] : []),
+          ...thoughtNote(usage.thoughtsTokenCount),
         ],
-        metrics: { latencyMs: t() - t0, costUsd: costOf({ inputTokens: 0, outputTokens: 0 }), bytesSent, inputTokens: 0, outputTokens: 0 },
+        metrics: { latencyMs: t() - t0, costUsd: costOf(usage), bytesSent, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens },
       };
     } catch (err) {
       if (isTimeoutOrAbort(err)) return fallback(TIMEOUT_STATUS, 'timeout');
@@ -283,108 +309,52 @@ export const cloudStructure: Stage = {
   },
 };
 
-/** Routes only low-confidence entities, with de-identified text and NO image, to the cloud. */
+/** Mid-confidence fields only: one de-identified, gated snippet per field. High-confidence stays local; low-confidence goes to human confirm. */
 export function hybridVerify(thresholds: RoutingThresholds): Stage {
   return {
-    id: 'cloud-verify', name: 'Cloud verify (de-identified text, low-confidence only)', kind: 'verify', accepts: ['fields'],
+    id: 'cloud-verify',
+    name: 'Cloud verify (de-identified snippets, mid-confidence only)',
+    kind: 'verify',
+    accepts: ['fields'],
+    meta: META_CLOUD_EGRESS,
     async run(input: StageData, ctx): Promise<StageResult> {
-      if (input.kind !== 'fields') throw new Error('fields required');
-      const t0 = t();
-      const source = input.text ?? '';
-      const routed = routeDoc(input.doc, source, thresholds);
-      const notes: string[] = [];
-      const keepLocal = (reason: string, status: string): StageResult => {
-        const doc = flagFieldsForHumanConfirm(input.doc, reason, source, thresholds);
-        notes.push(reason, `status:${status}`);
-        return {
-          stageId: this.id, stageKind: 'verify', site: 'local_code',
-          output: { kind: 'fields', doc, text: input.text, image: input.image },
-          notes, metrics: { latencyMs: t() - t0, costUsd: 0, bytesSent: 0 },
-        };
-      };
-      if (routed.toCloud === 0) {
-        notes.push('All entities accepted on-device; nothing sent.');
-        return { stageId: this.id, stageKind: 'verify', site: 'local_code', output: input, notes, metrics: { latencyMs: t() - t0, costUsd: 0, bytesSent: 0 } };
-      }
-      if (!isCloudReachable()) return keepLocal(OFFLINE_STATUS, 'offline');
-      // Safety net: de-id again even if a prior deid stage already ran.
-      const deid = runDeidentify(source);
-      notes.push(`De-identified ${deid.total} identifier(s): ${formatRedactionCounts(deid.redactions)}`);
-      const medNames = routed.meds.filter((m) => m.decision === 'send_to_cloud').map((m) => m.entity.name);
-      const labNames = routed.labs.filter((l) => l.decision === 'send_to_cloud').map((l) => l.entity.test);
-      const prompt = `${STRUCTURE_PROMPT}${deid.text}\n\nOnly return entries for these items: ${JSON.stringify({
-        medications: medNames,
-        labResults: labNames,
-      })}`;
-      const guard = tryAssertSafeForCloud(prompt);
-      if (!guard.ok) {
-        notes.push(guard.message);
-        const doc = humanConfirmNamed(input.doc, medNames, labNames, guard.message);
-        return {
-          stageId: this.id, stageKind: 'verify', site: 'local_code',
-          output: { kind: 'fields', doc, text: input.text, image: input.image },
-          notes,
-          metrics: { latencyMs: t() - t0, costUsd: 0, bytesSent: 0 },
-        };
-      }
-      const signal = cloudAbortSignal(ctx.signal);
-      let bytesSent = 0;
-      let raw: string;
-      let retried = false;
-      let cloud: ClinicalDoc;
-      try {
-        const result = await readCloudJsonWithRetry(
-          async (p) => {
-            bytesSent += structureRequestBytes(p);
-            return (await cloudJson().generateContent(p, { signal })).response.text();
-          },
-          prompt,
-        );
-        raw = result.raw;
-        retried = result.retried;
-        if (!result.doc) return keepLocal(INVALID_JSON_STATUS, 'invalid-json');
-        cloud = result.doc;
-      } catch (err) {
-        if (isTimeoutOrAbort(err)) return keepLocal(TIMEOUT_STATUS, 'timeout');
-        if (isNetworkFailure(err)) return keepLocal(OFFLINE_STATUS, 'offline');
-        throw err;
-      }
-      const u = { inputTokens: 0, outputTokens: 0, thoughtsTokenCount: 0 };
-      const doc: ClinicalDoc = { ...input.doc, medications: [...input.doc.medications], labResults: [...input.doc.labResults], abstentions: [...(input.doc.abstentions ?? [])] };
-      for (const m of routed.meds.filter((x) => x.decision === 'send_to_cloud')) {
-        const rec = reconcileMedication(m.entity, cloud.medications.find((c) => c.name.toLowerCase() === m.entity.name.toLowerCase()), thresholds);
-        doc.medications[m.index] = rec.value;
-        if (rec.decision === 'human_confirm') doc.abstentions!.push(`HUMAN CONFIRM medication "${m.entity.name}": ${rec.disagreements.join(', ') || 'low confidence'}`);
-      }
-      for (const l of routed.labs.filter((x) => x.decision === 'send_to_cloud')) {
-        const rec = reconcileLab(l.entity, cloud.labResults.find((c) => c.test.toLowerCase() === l.entity.test.toLowerCase()), thresholds);
-        doc.labResults[l.index] = rec.value;
-        if (rec.decision === 'human_confirm') doc.abstentions!.push(`HUMAN CONFIRM lab "${l.entity.test}": ${rec.disagreements.join(', ') || 'low confidence'}`);
-      }
-      notes.push(`Sent de-identified text for: ${[...medNames, ...labNames].join(', ')}. No image.`);
-      if (retried) notes.push('Retried once after a non-JSON cloud reply.');
-      notes.push(...thoughtNote(u.thoughtsTokenCount ?? 0));
-      return {
-        stageId: this.id, stageKind: 'verify', site: 'in_cloud',
-        output: { kind: 'fields', doc, text: input.text, image: input.image }, raw, notes,
-        metrics: { latencyMs: t() - t0, costUsd: costOf(u), bytesSent, inputTokens: u.inputTokens, outputTokens: u.outputTokens },
-      };
+      return executeHybridVerify(input, ctx, {
+        stageId: this.id,
+        structurePrompt: STRUCTURE_PROMPT,
+        thresholds,
+        costOf,
+        generate: async (prompt, signal) => {
+          const r = await cloudJson().generateContent(prompt, { signal });
+          return { text: r.response.text(), usage: usageFromResponse(r) };
+        },
+      });
     },
   };
 }
 
 /**
- * Default hybrid: nano-read → deid → cloud-structure (de-identified text only).
- * Cloud baseline (`cloud-only`): cloud-read → deid → cloud-structure. This
- * sends the page image; the UI keeps it off for uploads unless toggled, and
- * enables it for public benchmark comparison. Sage's harness calls `pipelines()`.
+ * Default hybrid: nano-read → nano-structure → deid → cloud-verify.
+ * Nano reads and extracts fields on-device. Only mid-confidence fields
+ * (humanReview ≤ conf < acceptOnDevice) go to the cloud as de-identified
+ * snippets. Cloud baseline (`cloud-only`): cloud-read → deid → cloud-structure,
+ * off by default for uploads. Sage's harness calls `pipelines()`.
  */
 export function pipelines(thresholds: RoutingThresholds): Pipeline[] {
   return [
     { id: 'on-device-only', name: 'On-device only (Nano)', stages: [nanoRead, nanoStructure] },
     { id: CLOUD_BASELINE_PIPELINE_ID, name: CLOUD_BASELINE_LABEL, stages: [cloudRead, deidStage, cloudStructure] },
-    { id: 'hybrid', name: 'Hybrid (Nano read + de-identified cloud structure)', stages: [nanoRead, deidStage, cloudStructure] },
+    { id: 'hybrid', name: 'Hybrid (Nano read + on-device extract; cloud only for mid-confidence fields)', stages: [nanoRead, nanoStructure, deidStage, hybridVerify(thresholds)] },
   ];
+}
+
+/**
+ * The cloud baseline's `cloud-read` stage intentionally sends the page image
+ * (explicit consent). Core's fail-closed guard would otherwise refuse a raw
+ * image before de-id; callers must pass this policy into `runPipeline`.
+ */
+export function cloudSafetyForPipeline(pipeline: Pipeline): CloudSafetyPolicy {
+  const exempt = pipeline.stages.filter((s) => s.id === 'cloud-read').map((s) => s.id);
+  return exempt.length ? { exempt } : {};
 }
 
 export function pipelinesForUi(thresholds: RoutingThresholds, opts: { source: PipelineSource; userEnabled?: boolean }): Pipeline[] {

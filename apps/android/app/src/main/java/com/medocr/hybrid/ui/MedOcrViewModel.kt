@@ -7,7 +7,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.medocr.hybrid.core.DEFAULT_THRESHOLDS
+import com.medocr.hybrid.inference.loadThresholds
 import com.medocr.hybrid.core.ImagePayload
 import com.medocr.hybrid.core.PipelineRun
 import com.medocr.hybrid.core.Reference
@@ -133,7 +133,7 @@ class MedOcrViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         viewModelScope.launch {
-            _state.update { it.copy(busy = true, error = null, status = "Running on-device, cloud, and hybrid pipelines…") }
+            _state.update { it.copy(busy = true, error = null, status = "Running on-device and hybrid pipelines…") }
             try {
                 val payload = withContext(Dispatchers.IO) { bmp.toJpegPayload() }
                 val wantAuto = _state.value.mode == AppInferenceMode.AUTO
@@ -143,17 +143,17 @@ class MedOcrViewModel(app: Application) : AndroidViewModel(app) {
                 val refText = _state.value.referenceText.trim().ifEmpty { null }
                 val ref = refText?.let { Reference(docId = "upload", text = it) }
                 var result = try {
-                    withContext(Dispatchers.IO) { runSession(payload, client, DEFAULT_THRESHOLDS, ref) }
+                    withContext(Dispatchers.IO) { runSession(payload, client, loadThresholds(), ref) }
                 } catch (e: Exception) {
                     if (client !is MockLlmClient) {
                         usedFallback = true
                         client = MockLlmClient()
-                        withContext(Dispatchers.IO) { runSession(payload, client, DEFAULT_THRESHOLDS, ref) }
+                        withContext(Dispatchers.IO) { runSession(payload, client, loadThresholds(), ref) }
                     } else throw e
                 }
                 if (result.hybrid.failed && client !is MockLlmClient) {
                     usedFallback = true
-                    result = withContext(Dispatchers.IO) { runSession(payload, MockLlmClient(), DEFAULT_THRESHOLDS, ref) }
+                    result = withContext(Dispatchers.IO) { runSession(payload, MockLlmClient(), loadThresholds(), ref) }
                 }
                 val queue = result.review.count { it.needsConfirm }
                 val status = buildString {

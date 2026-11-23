@@ -5,9 +5,6 @@
  * comparison screen all run without Nano or a Firebase project.
  */
 import {
-  reconcileLab,
-  reconcileMedication,
-  routeDoc,
   utf8Bytes,
   type ClinicalDoc,
   type Pipeline,
@@ -32,12 +29,16 @@ import {
   readRequestBytes,
   structureRequestBytes,
 } from './cloud-call';
-import { formatRedactionCounts, humanConfirmNamed, runDeidentify, tryAssertSafeForCloud } from './cloud-guard';
+import { tryAssertSafeForCloud } from './cloud-guard';
+import { executeHybridVerify } from './hybrid-verify-logic';
 import { CLOUD_MODEL } from './firebase';
 import {
   CLOUD_BASELINE_LABEL,
   CLOUD_BASELINE_PIPELINE_ID,
   IMAGE_EGRESS_NOTE_PREFIX,
+  META_CLOUD_EGRESS,
+  META_CLOUD_IMAGE_BASELINE,
+  META_NO_EGRESS,
   READ_PROMPT,
   STRUCTURE_PROMPT,
   deidStage,
@@ -184,6 +185,7 @@ export const mockNanoRead: Stage = {
   name: 'Mock Nano read (on-device)',
   kind: 'ocr',
   accepts: ['image'],
+  meta: META_NO_EGRESS,
   async run(input): Promise<StageResult> {
     if (input.kind !== 'image') throw new Error('image required');
     await delay();
@@ -201,6 +203,7 @@ export const mockNanoStructure: Stage = {
   name: 'Mock Nano structure (on-device)',
   kind: 'structure',
   accepts: ['text'],
+  meta: META_NO_EGRESS,
   async run(input): Promise<StageResult> {
     if (input.kind !== 'text') throw new Error('text required');
     await delay();
@@ -219,6 +222,7 @@ export const mockCloudRead: Stage = {
   name: `Mock ${CLOUD_MODEL} read (sends the page image)`,
   kind: 'ocr',
   accepts: ['image'],
+  meta: META_CLOUD_IMAGE_BASELINE,
   async run(input, ctx): Promise<StageResult> {
     if (input.kind !== 'image') throw new Error('image required');
     await delay();
@@ -271,6 +275,7 @@ export const mockCloudStructure: Stage = {
   name: `Mock ${CLOUD_MODEL} structure (simulated cloud)`,
   kind: 'structure',
   accepts: ['text'],
+  meta: META_CLOUD_EGRESS,
   async run(input, ctx): Promise<StageResult> {
     if (input.kind !== 'text') throw new Error('text required');
     await delay();
@@ -281,12 +286,8 @@ export const mockCloudStructure: Stage = {
     }
     const guard = tryAssertSafeForCloud(prompt);
     if (!guard.ok) {
-      return {
-        stageId: this.id, stageKind: 'structure', site: 'local_code',
-        output: { kind: 'fields', doc: { documentType: 'other', medications: [], labResults: [], abstentions: [guard.message] }, text: input.text, image: input.image },
-        notes: [guard.message],
-        metrics: { latencyMs: 0, costUsd: 0, bytesSent: 0 },
-      };
+      const fallback = onDeviceFallback(guard.message, 'blocked', input);
+      return { ...fallback, stageId: this.id };
     }
     const signal = cloudAbortSignal(ctx.signal, mockTimeoutMs);
     let bytesSent = 0;
@@ -329,102 +330,27 @@ export const mockCloudStructure: Stage = {
 export function mockHybridVerify(thresholds: RoutingThresholds): Stage {
   return {
     id: 'mock-cloud-verify',
-    name: 'Mock cloud verify (de-identified, low-confidence only)',
+    name: 'Mock cloud verify (de-identified snippets, mid-confidence only)',
     kind: 'verify',
     accepts: ['fields'],
+    meta: META_CLOUD_EGRESS,
     async run(input: StageData, ctx): Promise<StageResult> {
-      if (input.kind !== 'fields') throw new Error('fields required');
-      const source = input.text ?? '';
-      const routed = routeDoc(input.doc, source, thresholds);
-      const notes: string[] = [];
-      if (routed.toCloud === 0) {
-        notes.push('All entities accepted on-device; nothing sent.');
-        return { stageId: this.id, stageKind: 'verify', site: 'local_code', output: input, notes, metrics: { latencyMs: 0, costUsd: 0, bytesSent: 0 } };
-      }
-      if (!isCloudReachable()) {
-        const fallback = onDeviceFallback(OFFLINE_STATUS, 'offline', input);
-        return { ...fallback, stageId: this.id };
-      }
-      const deid = runDeidentify(source);
-      notes.push(`De-identified ${deid.total} identifier(s): ${formatRedactionCounts(deid.redactions)}`);
-      const medNames = routed.meds.filter((m) => m.decision === 'send_to_cloud').map((m) => m.entity.name);
-      const labNames = routed.labs.filter((l) => l.decision === 'send_to_cloud').map((l) => l.entity.test);
-      const names = { medications: medNames, labResults: labNames };
-      const prompt = `Only return entries for these items: ${JSON.stringify(names)}
-${deid.text}`;
-      const guard = tryAssertSafeForCloud(prompt);
-      if (!guard.ok) {
-        notes.push(guard.message);
-        const blocked = humanConfirmNamed(input.doc, medNames, labNames, guard.message);
-        return {
-          stageId: this.id, stageKind: 'verify', site: 'local_code',
-          output: { kind: 'fields', doc: blocked, text: input.text, image: input.image },
-          notes, metrics: { latencyMs: 0, costUsd: 0, bytesSent: 0 },
-        };
-      }
-      const signal = cloudAbortSignal(ctx.signal, mockTimeoutMs);
-      let bytesSent = 0;
-      let raw: string;
-      let retried = false;
-      let cloud: ClinicalDoc;
-      try {
-        const result = await readCloudJsonWithRetry(async (p) => {
-          bytesSent += structureRequestBytes(p);
-          return mockGenerateCloudText(p, signal);
-        }, prompt);
-        raw = result.raw;
-        retried = result.retried;
-        if (!result.doc) {
-          const fallback = onDeviceFallback(INVALID_JSON_STATUS, 'invalid-json', input);
-          return { ...fallback, stageId: this.id, metrics: { ...fallback.metrics!, bytesSent } };
-        }
-        cloud = result.doc;
-      } catch (err) {
-        if (isTimeoutOrAbort(err) || isNetworkFailure(err)) {
-          const reason = isTimeoutOrAbort(err) ? TIMEOUT_STATUS : OFFLINE_STATUS;
-          const status = isTimeoutOrAbort(err) ? 'timeout' : 'offline';
-          const fallback = onDeviceFallback(reason, status, input);
-          return { ...fallback, stageId: this.id };
-        }
-        throw err;
-      }
-      notes.push(`Simulated cloud re-read of: ${[...medNames, ...labNames].join(', ')}. No image.`);
-      if (retried) notes.push('Retried once after a non-JSON cloud reply.');
-      const doc: ClinicalDoc = {
-        ...input.doc,
-        medications: [...input.doc.medications],
-        labResults: [...input.doc.labResults],
-        abstentions: [...(input.doc.abstentions ?? [])],
-      };
-      for (const m of routed.meds.filter((x) => x.decision === 'send_to_cloud')) {
-        const rec = reconcileMedication(m.entity, cloud.medications.find((c) => c.name.toLowerCase() === m.entity.name.toLowerCase()), thresholds);
-        doc.medications[m.index] = rec.value;
-        if (rec.decision === 'human_confirm') doc.abstentions!.push(`HUMAN CONFIRM medication "${m.entity.name}": ${rec.disagreements.join(', ') || 'low confidence'}`);
-      }
-      for (const l of routed.labs.filter((x) => x.decision === 'send_to_cloud')) {
-        const rec = reconcileLab(l.entity, cloud.labResults.find((c) => c.test.toLowerCase() === l.entity.test.toLowerCase()), thresholds);
-        doc.labResults[l.index] = rec.value;
-        if (rec.decision === 'human_confirm') doc.abstentions!.push(`HUMAN CONFIRM lab "${l.entity.test}": ${rec.disagreements.join(', ') || 'low confidence'}`);
-      }
-      const inputTokens = tokensFrom(prompt);
-      const outputTokens = tokensFrom(raw);
-      return {
-        stageId: this.id, stageKind: 'verify', site: 'in_cloud',
-        output: { kind: 'fields', doc, text: input.text, image: input.image },
-        raw, notes,
-        metrics: {
-          latencyMs: 0, costUsd: estimateCloudUsd(inputTokens, outputTokens), bytesSent,
-          inputTokens, outputTokens,
-        },
-      };
+      return executeHybridVerify(input, ctx, {
+        stageId: this.id,
+        structurePrompt: STRUCTURE_PROMPT,
+        thresholds,
+        timeoutMs: mockTimeoutMs,
+        costOf: ({ inputTokens, outputTokens }) => estimateCloudUsd(inputTokens, outputTokens),
+        generate: async (prompt, signal) => ({ text: await mockGenerateCloudText(prompt, signal) }),
+      });
     },
   };
 }
 
-export function mockPipelines(_thresholds: RoutingThresholds): Pipeline[] {
+export function mockPipelines(thresholds: RoutingThresholds): Pipeline[] {
   return [
     { id: 'on-device-only', name: 'On-device only (mock Nano)', stages: [mockNanoRead, mockNanoStructure] },
     { id: CLOUD_BASELINE_PIPELINE_ID, name: CLOUD_BASELINE_LABEL, stages: [mockCloudRead, deidStage, mockCloudStructure] },
-    { id: 'hybrid', name: 'Hybrid (mock Nano read + de-identified cloud structure)', stages: [mockNanoRead, deidStage, mockCloudStructure] },
+    { id: 'hybrid', name: 'Hybrid (mock Nano read + on-device extract; cloud only for mid-confidence fields)', stages: [mockNanoRead, mockNanoStructure, deidStage, mockHybridVerify(thresholds)] },
   ];
 }

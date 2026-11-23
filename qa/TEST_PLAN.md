@@ -1,6 +1,6 @@
 # MedOCR Hybrid: QA test plan
 
-Owner: Sage (QA). Last updated: 23 Nov 2026, 15:37 IST. Feature freeze: 27 Nov 2026.
+Owner: Sage (QA). Last updated: 23 Nov 2026, 15:53 IST (round 2: date policy and fix verification). Feature freeze: 27 Nov 2026.
 
 Scope: `packages/core` (Louis), `packages/parsing` + `datasets/` (Rachel), `apps/web` (Avenger).
 QA writes only inside `qa/`, and never edits product code. Every test goes through the **public entry points** (`@med-ocr/core` and `@med-ocr/parsing` via their `exports["."]`) or through the real `apps/web/src/stages.ts` Stages run by core's `runPipeline`.
@@ -57,8 +57,9 @@ A test that needs code that does not exist yet is `skipIf`-guarded, so it turns 
 | ROUTE-07 | Remote-Config thresholds are honoured | core unit |
 | ROUTE-08/09 | `toCloud` count; an empty doc routes nothing | core unit |
 | ROUTE-10..16 | `reconcileMedication`/`reconcileLab`: normalised agreement, critical disagreement leads to human confirm, dose case, **route field**, cloud missing, low cloud confidence, lab values | core unit |
-| ROUTE-20..23 | parsing `fieldsBelowThreshold`: strict `<`, includeUnreadable, routed payload has no rawText/PII, NaN | parsing unit |
+| ROUTE-20..23 | parsing `fieldsBelowThreshold`: strict `<` at 0.85 (0.849 routed, 0.85 not), includeUnreadable, routed payload has no rawText/PII, NaN | parsing unit |
 | ROUTE-24 | core and parsing use one cloud threshold, not two | constants |
+| ROUTE-25 | Core defaults equal the agreed 0.85 / 0.5 | constants |
 | ROUTE-30..34 | `runPipeline`: site per stage, totals, kind mismatch, throwing stage, failed-stage latency, `readingText` skips deid | core + mock stages |
 | ROUTE-40..44 | apps/web `hybridVerify`: only low-confidence names sent; only routed entities replaced; disagreement leads to HUMAN CONFIRM; name variants reconcile; malformed cloud JSON doesn't crash | real Stage + Nano/Firebase mocks + spy |
 
@@ -85,6 +86,23 @@ Corpus (`src/pii.ts`, all synthetic). Names: plain, ALL-CAPS with honorific, low
 | DEID-G01 | Core runner refuses or de-identifies when an in_cloud stage gets text that never passed a deid stage | mock stages + spy |
 | DEID-G02 | `StageData.image` is not forwarded into an in_cloud stage | mock stages + spy |
 
+#### DEID round-2 additions (policy of 23 Nov: DOB → `[DOB]`, other dates → `[DATE]`, date fields extracted on device, ages may stay)
+| ID | Checks | How |
+|---|---|---|
+| Corpus DT1..DT4 | Report date dd/mm/yyyy, dd-Mon-yyyy sample date, ISO admission/discharge dates, date in words: none survive | scanner, per implementation |
+| DEID-*-POL-01 (x4) | Every DOB format becomes `[DOB]` (never `[DATE]`) | per implementation |
+| DEID-*-POL-02 (x4) | Every non-DOB date becomes `[DATE]` (never `[DOB]`) | per implementation |
+| DEID-*-POL-03 (x7) | Clinical look-alikes stay unchanged: BP 120/80, 37.5/325 mg, 1/2-0-1/2, reference ranges 13.0-17.0 and 0.4-4.0, Age/Sex 38Y/M, 2,50,000 | per implementation |
+| DEID-E2E-04 (revised) | Uses a clean transcript, so zero egress is due to confidence routing, not the guard | spy |
+| DEID-E2E-06a | `pipelinesForUi` drops the image-uploading cloud baseline for uploads, and keeps it with `userEnabled` and for `benchmark` | unit |
+| DEID-E2E-06b | Cloud baseline: the text request after cloud OCR carries no PII | spy (non-binary records) |
+| DEID-E2E-06c | Cloud baseline labels its image egress (`IMAGE_EGRESS_BYTES=` note) | spy + notes |
+| DEID-E2E-09 (+3) | Report date, date in words, and dd-Mon-yyyy as single residuals do not reach the cloud | spy |
+| DEID-E2E-10 | Dates reach the cloud only as `[DOB]`/`[DATE]`, and the call is not blocked | spy body |
+| DEID-E2E-11 | When the guard blocks, the user still gets on-device structured fields | final doc |
+| DEID-S01 (revised) | Every text-receiving cloud stage follows a deid stage; the gated `cloud-read` image baseline is the only exemption | structural |
+| DEID-S02 | `main.ts` selects pipelines with `pipelinesForUi`/`isCloudBaselineEnabled` | static |
+
 ### SCORING: correctness and calibration (tests/scoring.test.ts)
 | ID | Checks |
 |---|---|
@@ -103,6 +121,7 @@ Corpus (`src/pii.ts`, all synthetic). Names: plain, ALL-CAPS with honorific, low
 | SCORE-42 | A calibration utility is exported (gate) |
 | SCORE-50..52 | scoreRun and summarize (Benchmark C): CER from the reading stage, F1 from final fields, means and sums, failed flag |
 | SCORE-60..62 | costUsd: pinned cloud model is non-zero, unknown model is not silently $0, on-device is $0 |
+| SCORE-63 | apps/web `cloudStructure` records the SDK's token usage (needed for cost) |
 
 ### OFFLINE: no network means degrade to on-device (tests/offline.test.ts)
 | ID | Checks | How |
@@ -119,6 +138,7 @@ Corpus (`src/pii.ts`, all synthetic). Names: plain, ALL-CAPS with honorific, low
 | OFF-10 | AbortSignal stops a hung stage within 1 s | core runner + hanging stage |
 | OFF-11 | Signal aborted between stages stops later stages | core runner |
 | OFF-12 | apps/web stages forward `ctx.signal` to the SDK | static |
+| OFF-13 | Dynamic: a stalled cloud call (spy `hang()` mode; the SDK mock passes `{signal}` to fetch) is cancelled by the caller's AbortSignal, and hybrid returns the on-device result within 1.5 s | real Stages |
 
 ## 3. Manual and not-yet-automatable checks (before freeze)
 | ID | Check | Why manual |

@@ -3,24 +3,115 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MedOCR Hybrid Bench</title>
+  <title>MedOCR Hybrid</title>
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
-  <header>
-    <h1>MedOCR Hybrid Bench</h1>
-    <p>Reads medical documents on your device with Gemini Nano. Only de-identified, low-confidence fields go to the cloud.</p>
+  <header class="top">
+    <div>
+      <h1>MedOCR Hybrid</h1>
+      <p class="lede">English medical documents only. Gemini Nano reads the page on your device. The default hybrid path sends only de-identified text; the optional cloud baseline sends the image.</p>
+    </div>
+    <div class="status-row" aria-live="polite">
+      <span id="nano-pill" class="pill">Checking Nano…</span>
+      <span id="online-pill" class="pill">Checking network…</span>
+      <span id="firebase-pill" class="pill">Firebase…</span>
+    </div>
   </header>
-  <section class="controls">
-    <button id="init">1. Prepare on-device model</button>
-    <span id="status">Not initialised</span>
-    <label>2. Document (PNG/JPEG/PDF) <input id="file" type="file" accept="image/png,image/jpeg,application/pdf" /></label>
-    <label>Reference transcription (optional, for CER) <textarea id="refText" rows="3"></textarea></label>
-    <label>Reference fields JSON (optional, for field F1) <textarea id="refJson" rows="3"></textarea></label>
-    <button id="run" disabled>3. Run all three pipelines</button>
-  </section>
-  <img id="preview" alt="" />
-  <section id="results" class="grid"></section>
+
+  <main>
+    <section class="panel" id="setup-panel">
+      <h2>1. Setup</h2>
+      <div class="row wrap">
+        <button type="button" id="prepare-nano">Prepare Gemini Nano</button>
+        <label class="check"><input type="checkbox" id="use-mock" /> Use mock inference (works without Nano or Firebase)</label>
+      </div>
+      <p id="setup-hint" class="hint"></p>
+    </section>
+
+    <section class="panel" id="upload-panel">
+      <h2>2. Document</h2>
+      <div class="row wrap">
+        <label class="file-label">Upload PNG, JPEG, or PDF
+          <input id="file" type="file" accept="image/png,image/jpeg,application/pdf" />
+        </label>
+        <button type="button" id="demo-sample">Use demo sample</button>
+      </div>
+      <div id="page-picker" class="page-picker" hidden>
+        <button type="button" id="page-prev">Previous page</button>
+        <span id="page-label">Page 1 of 1</span>
+        <button type="button" id="page-next">Next page</button>
+      </div>
+      <figure class="preview-wrap">
+        <img id="preview" alt="Selected page preview" hidden />
+        <figcaption id="preview-caption"></figcaption>
+      </figure>
+    </section>
+
+    <section class="panel" id="mode-panel">
+      <h2>3. Mode</h2>
+      <fieldset class="modes">
+        <legend class="sr-only">Extraction mode</legend>
+        <label><input type="radio" name="mode" value="hybrid" checked /> Hybrid (default) — Nano read, then de-identified cloud structure</label>
+        <label><input type="radio" name="mode" value="on-device-only" /> On-device only — nothing leaves this computer</label>
+        <label id="baseline-radio-wrap"><input type="radio" name="mode" value="cloud-only" id="mode-baseline" disabled /> Cloud baseline (sends the image)</label>
+      </fieldset>
+      <label class="check"><input type="checkbox" id="enable-baseline" /> Enable cloud baseline for this upload</label>
+      <div id="baseline-warning" class="banner warn" hidden role="alert">
+        <strong>Cloud baseline (sends the image).</strong>
+        The full page image will leave this device and be sent to Gemini in the cloud.
+        This is off by default for your uploads. Use it only when you intend that, or when comparing against the public benchmark set.
+        The privacy receipt will record the image and its byte count.
+      </div>
+    </section>
+
+    <section class="panel actions">
+      <button type="button" id="run" disabled>4. Extract</button>
+      <button type="button" id="cancel" hidden>Cancel</button>
+    </section>
+
+    <ol id="progress" class="progress" hidden></ol>
+    <div id="run-banner"></div>
+
+    <nav class="tabs" role="tablist">
+      <button type="button" class="tab is-active" data-tab="review" role="tab" aria-selected="true">Review</button>
+      <button type="button" class="tab" data-tab="receipt" role="tab" aria-selected="false">Privacy receipt</button>
+      <button type="button" class="tab" data-tab="compare" role="tab" aria-selected="false">Compare</button>
+    </nav>
+
+    <section id="tab-review" class="tab-panel" role="tabpanel">
+      <div id="review-root">
+        <p class="hint">Extract a document to review fields, crops, confidence, and the human-confirm queue.</p>
+      </div>
+    </section>
+
+    <section id="tab-receipt" class="tab-panel" hidden role="tabpanel">
+      <div id="receipt-root">
+        <p class="hint">After a run, this receipt lists what left the device (counts and types only — never identifier values).</p>
+      </div>
+    </section>
+
+    <section id="tab-compare" class="tab-panel" hidden role="tabpanel">
+      <div id="compare-root">
+        <p>
+          Split-screen comparison on the public <strong>African Medical Records</strong> set
+          (3 English documents with ground-truth transcriptions, CC-BY-4.0).
+          Cloud baseline is included here because this is a public benchmark comparison.
+          CER uses the raw OCR transcript (before de-id). Cost is an estimate from
+          <code>benchmarks/pricing.json</code> until core pins official rates. Bytes match the serialized request body plus headers.
+        </p>
+        <div class="row wrap">
+          <button type="button" id="run-compare">Run on-device vs cloud vs hybrid</button>
+          <span id="compare-status" class="hint"></span>
+        </div>
+        <div id="compare-grid" class="compare-grid"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>MedOCR Hybrid · #BuildHybridAI 2026 · See <code>apps/web/README.md</code> for Chrome flags and architecture.</p>
+  </footer>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

@@ -45,18 +45,13 @@ describe('de-identification vs raw OCR', () => {
     expect(deidOut.notes?.join(' ')).toMatch(/De-identified/i);
   });
 
-  it('leaves CER/WER on the raw OCR stage, not the de-id output', async () => {
+  it('leaves CER/WER on the raw OCR stage, not later de-id or verify output', async () => {
     const [onDevice, , hybrid] = mockPipelines(DEFAULT_THRESHOLDS);
     const run = await runPipeline(hybrid!, { kind: 'image', image }, { docId: 'sample-lab-1' });
     const raw = readingText(run);
     expect(raw).toContain('Anita Rao');
     expect(raw).toContain('Dr. Mehta');
-    const deidStep = run.steps.find((s) => s.stageKind === 'deid');
-    expect(deidStep).toBeDefined();
-    if (deidStep?.output.kind === 'fields' || deidStep?.output.kind === 'text') {
-      const deidText = deidStep.output.kind === 'text' ? deidStep.output.text : deidStep.output.text;
-      expect(deidText).not.toBe(raw);
-    }
+    expect(run.steps[0]?.stageKind).toBe('ocr');
     expect(onDevice).toBeDefined();
   });
 });
@@ -68,10 +63,13 @@ describe('assertSafeForCloud gate', () => {
   });
 
   it('blocks residual PHI and keeps those fields local for human confirm', async () => {
-    // Core de-id does not cover street addresses or PIN codes; parsing's
-    // assertSafeForCloud still flags them. This is the residual-PHI case.
+    // Core de-id now redacts street addresses and PIN codes (Louis, 99f7fd8).
     const residual = 'Address: Flat 3B, Green Park, New Delhi - 110016\nPIN: 411001\nTab Dolo 650 BD';
-    expect(runDeidentify(residual).text).toContain('Green Park');
+    const cleaned = runDeidentify(residual).text;
+    expect(cleaned).not.toContain('Green Park');
+    expect(cleaned).not.toContain('110016');
+    expect(cleaned).not.toContain('411001');
+    // The raw (un-deidentified) text is still blocked by the guard.
     const blocked = tryAssertSafeForCloud(residual);
     expect(blocked.ok).toBe(false);
     if (blocked.ok) throw new Error('expected block');

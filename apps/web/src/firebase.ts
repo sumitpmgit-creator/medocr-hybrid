@@ -24,6 +24,7 @@ export const isConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.proj
 
 let app: FirebaseApp | undefined;
 let ai: AI | undefined;
+let signedIn = false;
 
 export function firebase() {
   if (!isConfigured) throw new Error('Firebase config missing: copy apps/web/.env.example to .env.local and fill it in.');
@@ -39,13 +40,17 @@ export function firebase() {
   return { app, ai: ai! };
 }
 
+/** Anonymous auth, only when placeholder config is filled in. */
 export async function signIn() {
+  if (!isConfigured) throw new Error('Firebase is not configured');
   const auth = getAuth(firebase().app);
   if (!auth.currentUser) await signInAnonymously(auth);
+  signedIn = true;
   return auth.currentUser!;
 }
 
 export async function loadThresholds(): Promise<RoutingThresholds> {
+  if (!isConfigured) return { ...DEFAULT_THRESHOLDS };
   const rc = getRemoteConfig(firebase().app);
   rc.settings.minimumFetchIntervalMillis = env.DEV ? 10_000 : 3_600_000;
   rc.defaultConfig = { accept_on_device_threshold: DEFAULT_THRESHOLDS.acceptOnDevice, human_review_threshold: DEFAULT_THRESHOLDS.humanReview };
@@ -53,8 +58,34 @@ export async function loadThresholds(): Promise<RoutingThresholds> {
   return { acceptOnDevice: getNumber(rc, 'accept_on_device_threshold'), humanReview: getNumber(rc, 'human_review_threshold') };
 }
 
-/** Stores metrics only. No image, no transcript, no PHI leaves the device via Firestore. */
-export async function saveRunSummary(summary: Record<string, unknown>) {
+/** Allow-listed metrics only. Never write document text, field values, crops, or PHI. */
+export const FIRESTORE_METRICS_KEYS = [
+  'pipelineId',
+  'mode',
+  'cer',
+  'wer',
+  'fieldF1',
+  'latencyMs',
+  'bytesSent',
+  'costUsd',
+  'estimatedUsd',
+  'failed',
+  'inputTokens',
+  'outputTokens',
+] as const;
+
+export type FirestoreRunMetrics = Partial<Record<(typeof FIRESTORE_METRICS_KEYS)[number], string | number | boolean | null>>;
+
+export async function saveRunSummary(summary: FirestoreRunMetrics): Promise<void> {
+  if (!isConfigured) return;
   const user = await signIn();
-  return addDoc(collection(getFirestore(firebase().app), 'users', user.uid, 'runs'), { ...summary, createdAt: serverTimestamp() });
+  const payload: Record<string, unknown> = { createdAt: serverTimestamp() };
+  for (const key of FIRESTORE_METRICS_KEYS) {
+    if (key in summary) payload[key] = summary[key] ?? null;
+  }
+  await addDoc(collection(getFirestore(firebase().app), 'users', user.uid, 'runs'), payload);
+}
+
+export function isSignedIn(): boolean {
+  return signedIn;
 }

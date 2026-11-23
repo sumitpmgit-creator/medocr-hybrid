@@ -70,3 +70,26 @@ test('stage selection: raw OCR by name, never the de-id output', () => {
   assert.deepEqual(pickDeid([{ stageId: 'nano-read', stageKind: 'ocr', text: 'a' }]).texts, []);
   assert.equal(pickOcr([], 'fallback').source, 'output.text (no OCR stage in trace)');
 });
+
+import { loadDataset, loadExclusions } from '../src/dataset.ts';
+import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+test('dataset loader: bilingual field names, reference_type none, explicit exclusions', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bench-'));
+  const dir = join(root, 'datasets', 'toy');
+  mkdirSync(join(dir, 'img'), { recursive: true });
+  for (const n of ['a', 'b', 'c']) writeFileSync(join(dir, 'img', `${n}.jpg`), 'x');
+  writeFileSync(join(dir, 'manifest.jsonl'), [
+    { document_id: 'toy-a', image_path: 'datasets/toy/img/a.jpg', reference_type: 'transcription', reference_text: 'one' },
+    { document_id: 'toy-b', image_path: 'datasets/toy/img/b.jpg', reference_type: 'none' },
+    { document_id: 'toy-c', image_path: 'datasets/toy/img/c.jpg', reference_type: 'transcription', reference_text: 'three' },
+  ].map((x) => JSON.stringify(x)).join('\n'));
+  writeFileSync(join(root, 'ex.json'), JSON.stringify({ 'datasets/toy': [{ id: 'toy-c', reason: 'conflict' }, { id: 'toy-z', reason: 'typo' }] }));
+  const ex = loadExclusions(join(root, 'ex.json'), 'datasets/toy');
+  const d = loadDataset(dir, undefined, ex);
+  assert.equal(d.manifestCount, 3);
+  assert.deepEqual(d.samples.map((s) => s.id), ['toy-a', 'toy-b']);
+  assert.equal(d.samples[1].reference_text, undefined);
+  assert.deepEqual(d.excluded.map((x) => [x.id, x.found]), [['toy-c', true], ['toy-z', false]]);
+});

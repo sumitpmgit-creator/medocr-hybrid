@@ -2,19 +2,24 @@
 /**
  * Display-side cost and byte accounting on top of a core PipelineRun.
  *
- * `@med-ocr/core` costUsd() currently returns 0 for gemini-3.5-flash-lite
- * because official prices are not pinned in packages/core (see the TODO there).
- * These demo rates are used only when the run's cost is 0, and are labelled
- * "estimated" in the UI. Official paid-tier rates read 2026-11-23 from
- * https://ai.google.dev/gemini-api/docs/pricing for gemini-3.5-flash-lite:
- * $0.30 / 1M input and $2.50 / 1M output. Thinking tokens are billed at the
- * output rate and must already be folded into outputTokens.
+ * Display cost prefers the USD recorded on the run, which stages compute with
+ * `@med-ocr/core` `costUsd()` (official paid-tier rates, mirroring
+ * `benchmarks/pricing.json`, retrieved 2026-11-23). If a run still reports $0
+ * (for example a mock without token counts), these same rates from
+ * `benchmarks/pricing.json` are shown as an estimate. Thinking tokens are
+ * billed at the output rate and must already be folded into outputTokens.
  */
 import { costUsd, type PipelineRun, type StageMetrics, type StageResult } from '@med-ocr/core';
+import pricing from '../../../benchmarks/pricing.json';
 import { CLOUD_MODEL } from './firebase';
 
-export const DEMO_CLOUD_INPUT_USD_PER_MILLION = 0.3;
-export const DEMO_CLOUD_OUTPUT_USD_PER_MILLION = 2.5;
+const FLASH_LITE = pricing.models['gemini-3.5-flash-lite'];
+if (!FLASH_LITE) throw new Error('benchmarks/pricing.json is missing gemini-3.5-flash-lite rates');
+
+export const DEMO_CLOUD_INPUT_USD_PER_MILLION = FLASH_LITE.input_per_1m_usd;
+export const DEMO_CLOUD_OUTPUT_USD_PER_MILLION = FLASH_LITE.output_per_1m_usd;
+export const PRICING_SOURCE = pricing.source;
+export const PRICING_RETRIEVED = pricing.retrieved;
 
 export interface UsageView {
   bytesSent: number;

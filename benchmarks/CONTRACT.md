@@ -5,11 +5,18 @@
 One JSON object per line. The harness accepts the core `DatasetItem` shape written by
 `scripts/import_datasets.py`:
 
+Snake_case fields from Rachel's newer importers are accepted as aliases: `document_id` for `id`, `image_path` for `imagePath`,
+and `reference_text` for `referenceText`. `reference_type: "none"` means no reference: the document runs but isn't scored for CER/WER.
+`annotation_issues` and `language` are carried through.
+
+**Exclusions** are not set in the manifest. They live in `benchmarks/exclusions.json`, as `{ "<dataset path>": [{ "id", "reason" }] }`.
+A listed id that's missing from the manifest triggers a warning, and the results JSON records it with `found: false`.
+
 | key | needed for | notes |
 |---|---|---|
 | `id` | all | stable, unique |
 | `imagePath` | all | relative to the repo root (or `image`, relative to the dataset dir). PNG/JPEG only; render PDFs to PNG first |
-| `referenceText` | CER, WER | full-page transcription. AMR has it; EkaCare does not |
+| `referenceText` | CER, WER | full-page transcription. AMR has verbatim text. Bilingual has English captions (`reference_text`; Bangla in `reference_text_bangla`, not scored). EkaCare has none. Normalisation rules: README "Normalisation" (NFC, not NFKC) |
 | `referenceDoc` | field accuracy | a core `ClinicalDoc` (`medications[]`, `labResults[]`, `documentType`). No dataset has it yet |
 | `phi` | de-id leak check (optional) | `[{ "type": "patient_name" \| "clinician_name" \| "record_id" \| "phone" \| "dob" \| "national_id" \| "email", "value": "…" }]`. If present it replaces rule-based detection from `referenceText` |
 | `documentType`, `rubrics`, `prompt`, `license`, `datasetVersion` | carried into results | rubrics are not scored by this harness (needs an LLM judge) |
@@ -51,3 +58,14 @@ If `stages.ts`, `firebase.ts` or the core exports change names, update `bench.ts
 `runPipeline(input, { mode })` with the `run` signature above (plus an optional `capabilities()`).
 Core's `runPipeline(pipeline, input, opts)` is a stage runner, not this signature, so the Node driver
 is only for future Node-side pipelines. Gemini Nano runs only in Chrome, so device and hybrid modes always need the browser driver.
+
+## 4. On-device Nano token limits (owner: Avenger / apps/web)
+
+Gemini Nano’s context window is **platform-specific**. Pipelines must not assume a single number.
+
+| Platform | Constant | Limit | Source |
+|---|---|---|---|
+| Web (Chrome Prompt API, Firebase AI Logic hybrid) | `WEB_NANO_MAX_TOKENS` in `apps/web/src/stages.ts` | **9216** tokens | [Firebase hybrid web get-started](https://firebase.google.com/docs/ai-logic/hybrid/web/get-started) (also recorded as `NANO_MAX_TOKENS` in `packages/parsing`) |
+| Android (AICore / Firebase on-device) | `ANDROID_NANO_MAX_TOKENS` in `apps/android/app/src/main/java/com/medocr/hybrid/parsing/Constraints.kt` | **4000** tokens | [Firebase hybrid Android docs](https://firebase.google.com/docs/ai-logic/hybrid/android/get-started); see `apps/android/README.md` |
+
+The web demo validates **English only** (`DEMO_LANGUAGES = ['en']`). Cost for display and comparison is read from `benchmarks/pricing.json` until `packages/core` pins official rates.

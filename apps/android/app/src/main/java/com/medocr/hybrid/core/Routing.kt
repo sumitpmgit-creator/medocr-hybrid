@@ -58,6 +58,7 @@ data class DocRoute(
     val meds: List<EntityRoute<Medication>>,
     val labs: List<EntityRoute<LabResult>>,
     val toCloud: Int,
+    val toHuman: Int,
 )
 
 fun routeDoc(
@@ -65,8 +66,13 @@ fun routeDoc(
     sourceText: String,
     t: RoutingThresholds = DEFAULT_THRESHOLDS,
 ): DocRoute {
-    fun decide(c: Double): RouteDecision =
-        if (c >= t.acceptOnDevice) RouteDecision.ACCEPT_ON_DEVICE else RouteDecision.SEND_TO_CLOUD
+    // BUG-026: >= acceptOnDevice stays local; [humanReview, acceptOnDevice) goes
+    // to cloud-structure as de-identified snippets; below humanReview is human confirm.
+    fun decide(c: Double): RouteDecision = when {
+        c >= t.acceptOnDevice -> RouteDecision.ACCEPT_ON_DEVICE
+        c >= t.humanReview -> RouteDecision.SEND_TO_CLOUD
+        else -> RouteDecision.HUMAN_CONFIRM
+    }
     val meds = doc.medications.mapIndexed { index, m ->
         val g = groundedConfidence(m.confidence, listOf(m.name, m.strength, m.dose), sourceText)
         EntityRoute(index, m, g.confidence, g.grounded, decide(g.confidence))
@@ -80,6 +86,8 @@ fun routeDoc(
         labs = labs,
         toCloud = meds.count { it.decision == RouteDecision.SEND_TO_CLOUD } +
             labs.count { it.decision == RouteDecision.SEND_TO_CLOUD },
+        toHuman = meds.count { it.decision == RouteDecision.HUMAN_CONFIRM } +
+            labs.count { it.decision == RouteDecision.HUMAN_CONFIRM },
     )
 }
 

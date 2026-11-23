@@ -43,7 +43,7 @@ function hasImagePart(text: string): boolean {
 export class EgressSpy {
   records: EgressRecord[] = [];
   private restores: (() => void)[] = [];
-  private mode: 'deny' | 'respond' | 'offline' = 'deny';
+  private mode: 'deny' | 'respond' | 'offline' | 'hang' = 'deny';
   private responder: Responder = () => ({ ok: true });
 
   install(): this {
@@ -59,6 +59,14 @@ export class EgressSpy {
       }
       const rec = self.capture('fetch', url, body);
       if (self.mode === 'offline') throw new TypeError('Failed to fetch');
+      if (self.mode === 'hang') {
+        // Models a stalled cloud call: settles only if the caller's AbortSignal fires.
+        const sig: AbortSignal | undefined = init?.signal;
+        return new Promise<Response>((_res, rej) => {
+          if (sig?.aborted) return rej(sig.reason ?? new DOMException('Aborted', 'AbortError'));
+          sig?.addEventListener('abort', () => rej(sig.reason ?? new DOMException('Aborted', 'AbortError')), { once: true });
+        });
+      }
       if (self.mode === 'deny') { rec.blocked = true; throw new Error(`[egress-spy] blocked real network call to ${url}`); }
       const reply = await self.responder(url, rec.body);
       return new Response(JSON.stringify(reply ?? {}), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -122,6 +130,7 @@ export class EgressSpy {
   reset(): void { this.records = []; }
   deny(): this { this.mode = 'deny'; return this; }
   offline(): this { this.mode = 'offline'; return this; }
+  hang(): this { this.mode = 'hang'; return this; }
   respond(fn: Responder): this { this.mode = 'respond'; this.responder = fn; return this; }
   get isOffline() { return this.mode === 'offline'; }
 

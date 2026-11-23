@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { runPipeline, scoreRun, ErrorRegister, type ClinicalDoc, type ImagePayload, type PipelineRun, type Reference } from '@med-ocr/core';
 import { isConfigured, loadThresholds, saveRunSummary } from './firebase';
-import { pipelinesForUi, prepareOnDevice } from './stages';
+import { cloudSafetyForPipeline, pipelinesForUi, prepareOnDevice } from './stages';
 import { fileToImage } from './pdf';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -58,7 +58,7 @@ $('run').addEventListener('click', async () => {
   const thresholds = await loadThresholds().catch(() => ({ acceptOnDevice: 0.85, humanReview: 0.5 }));
   const cards: string[] = [];
   for (const p of pipelinesForUi(thresholds, { source: 'upload' })) {
-    const run = await runPipeline(p, { kind: 'image', image }, { docId: 'upload' });
+    const run = await runPipeline(p, { kind: 'image', image }, { docId: 'upload', cloudSafety: cloudSafetyForPipeline(p) });
     cards.push(card(run, p.name, ref));
     results.innerHTML = cards.join('');
     const s = scoreRun(run, ref);

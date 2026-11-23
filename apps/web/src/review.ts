@@ -59,7 +59,9 @@ export function reviewFieldsFromRun(
   const routed = routeDoc(structured ?? finalDoc, sourceText, thresholds);
   const sentMeds = new Set(routed.meds.filter((m) => m.decision === 'send_to_cloud').map((m) => m.index));
   const sentLabs = new Set(routed.labs.filter((l) => l.decision === 'send_to_cloud').map((l) => l.index));
+  const cloudRan = run.steps.some((step) => step.site === 'in_cloud' && step.metrics.bytesSent > 0);
   const abstentions = finalDoc.abstentions ?? [];
+  const blockedNote = abstentions.find((line) => /cloud call blocked|residual identifier/i.test(line));
 
   const fields: ReviewField[] = [];
   finalDoc.medications.forEach((med, index) => {
@@ -75,10 +77,10 @@ export function reviewFieldsFromRun(
       label: med.name || `Medication ${index + 1}`,
       value,
       confidence,
-      source: sent ? 'cloud' : 'on-device',
+      source: cloudRan && sent ? 'cloud' : 'on-device',
       bbox: med.bbox,
       needsConfirm,
-      reason: reason ?? (needsConfirm ? 'Low confidence — please confirm' : undefined),
+      reason: reason ?? blockedNote ?? (needsConfirm ? 'Low confidence — please confirm' : undefined),
       originalValue: value,
     });
   });
@@ -95,10 +97,10 @@ export function reviewFieldsFromRun(
       label: lab.test || `Lab ${index + 1}`,
       value,
       confidence,
-      source: sent ? 'cloud' : 'on-device',
+      source: cloudRan && sent ? 'cloud' : 'on-device',
       bbox: lab.bbox,
       needsConfirm,
-      reason: reason ?? (needsConfirm ? 'Low confidence — please confirm' : undefined),
+      reason: reason ?? blockedNote ?? (needsConfirm ? 'Low confidence — please confirm' : undefined),
       originalValue: value,
     });
   });

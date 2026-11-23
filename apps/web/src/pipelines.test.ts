@@ -8,6 +8,7 @@ import {
   CLOUD_BASELINE_PIPELINE_ID,
   isCloudBaselineEnabled,
   pipelines,
+  cloudSafetyForPipeline,
   pipelinesForUi,
 } from './stages';
 
@@ -22,9 +23,9 @@ describe('CONTRACT.md stage names', () => {
     expect(cloud?.stages.map((s) => s.id)).toEqual(['cloud-read', 'deid', 'cloud-structure']);
   });
 
-  it('uses nano-read → deid → cloud-structure for the default hybrid chain', () => {
+  it('uses nano-read → nano-structure → cloud-verify for the default hybrid chain', () => {
     const hybrid = pipelines(DEFAULT_THRESHOLDS).find((p) => p.id === 'hybrid');
-    expect(hybrid?.stages.map((s) => s.id)).toEqual(['nano-read', 'deid', 'cloud-structure']);
+    expect(hybrid?.stages.map((s) => s.id)).toEqual(['nano-read', 'nano-structure', 'deid', 'cloud-verify']);
   });
 
   it('keeps on-device-only as nano-read → nano-structure', () => {
@@ -34,7 +35,7 @@ describe('CONTRACT.md stage names', () => {
 });
 
 describe('cloud baseline default', () => {
-  it('is off by default for user uploads and on for public benchmark comparison', () => {
+  it('BUG-025: upload sources never include cloud-only by default; it is on for public benchmark comparison', () => {
     expect(isCloudBaselineEnabled({ source: 'upload' })).toBe(false);
     expect(isCloudBaselineEnabled({ source: 'upload', userEnabled: false })).toBe(false);
     expect(isCloudBaselineEnabled({ source: 'upload', userEnabled: true })).toBe(true);
@@ -57,7 +58,7 @@ describe('cloud baseline privacy receipt', () => {
   it('records that the full image left the device, with its byte count', async () => {
     const baseline = mockPipelines(DEFAULT_THRESHOLDS).find((p) => p.id === 'cloud-only');
     expect(baseline).toBeDefined();
-    const run = await runPipeline(baseline!, { kind: 'image', image }, { docId: 'upload' });
+    const run = await runPipeline(baseline!, { kind: 'image', image }, { docId: 'upload', cloudSafety: cloudSafetyForPipeline(baseline!) });
     expect(run.steps[0]?.stageId).toBe('cloud-read');
     const receipt = buildPrivacyReceipt(run, { now: () => new Date('2026-11-23T09:45:00+05:30') });
     expect(receipt.imagesStayLocal).toBe(false);
@@ -77,6 +78,6 @@ describe('cloud baseline privacy receipt', () => {
     expect(receipt.leftDevice.some((item) => item.kind === 'page-image')).toBe(false);
     expect(receipt.imagesStayLocal).toBe(true);
     expect(receipt.imageBytesSent).toBe(0);
-    expect(run.steps.map((s) => s.stageId)).toEqual(['mock-nano-read', 'deid', 'mock-cloud-structure']);
+    expect(run.steps.map((s) => s.stageId)).toEqual(['mock-nano-read', 'mock-nano-structure', 'deid', 'mock-cloud-verify']);
   });
 });

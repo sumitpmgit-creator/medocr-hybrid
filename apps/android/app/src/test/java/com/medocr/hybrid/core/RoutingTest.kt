@@ -34,4 +34,38 @@ class RoutingTest {
         assertEquals(RouteDecision.HUMAN_CONFIRM, disagreeing.decision)
         assertTrue(disagreeing.disagreements.contains("frequency") || disagreeing.disagreements.contains("name"))
     }
+
+    @Test
+    fun veryLowConfidenceGoesToHumanConfirmWithoutCloud() {
+        val doc = ClinicalDoc(
+            documentType = DocumentType.PRESCRIPTION,
+            medications = listOf(
+                Medication(name = "Mysterycillin", strength = "10 mg", confidence = 0.4, sourceText = "Tab Mysterycillin 10 mg"),
+            ),
+        )
+        val routed = routeDoc(doc, "Tab Mysterycillin 10 mg")
+        assertEquals(RouteDecision.HUMAN_CONFIRM, routed.meds[0].decision)
+        assertEquals(0, routed.toCloud)
+        assertEquals(1, routed.toHuman)
+    }
+
+    @Test
+    fun allHighConfidenceMakesZeroCloudRoutes() {
+        val doc = ClinicalDoc(
+            documentType = DocumentType.PRESCRIPTION,
+            medications = listOf(
+                Medication(name = "Pantoprazole", strength = "40 mg", frequency = "OD", confidence = 0.97, sourceText = "Tab Pantoprazole 40 mg OD"),
+            ),
+        )
+        val routed = routeDoc(doc, "Tab Pantoprazole 40 mg OD")
+        assertEquals(RouteDecision.ACCEPT_ON_DEVICE, routed.meds[0].decision)
+        assertEquals(0, routed.toCloud)
+        assertEquals(0, routed.toHuman)
+    }
+
+    @Test
+    fun defaultsAreRemoteConfigReadyPointEightFiveAndPointFive() {
+        assertEquals(0.85, DEFAULT_THRESHOLDS.acceptOnDevice, 0.0)
+        assertEquals(0.5, DEFAULT_THRESHOLDS.humanReview, 0.0)
+    }
 }

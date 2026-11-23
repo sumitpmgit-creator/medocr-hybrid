@@ -45,7 +45,7 @@ describe('BUG-006: hybrid offline fallback', () => {
     expect(last.metrics.bytesSent).toBe(0);
     expect(last.notes?.some((n) => n === OFFLINE_STATUS || n === 'status:offline')).toBe(true);
     expect(last.notes?.join('\n')).not.toMatch(/Failed to fetch/i);
-    expect(last.site).toBe('on_device');
+    expect(['on_device', 'local_code']).toContain(last.site);
 
     const output = last.output;
     expect(output.kind).toBe('fields');

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-package com.medocr.hybrid.parsing.deid
+package com.medocr.hybrid.core.deid
 
 /** Kotlin mirror of packages/parsing/src/deid/patterns.ts. */
 
-val PLACEHOLDER_TOKEN = Regex("\\[(?:NAME|ABHA|PHONE|ADDRESS|REG_NO|EMAIL|AADHAAR|UHID)\\]")
+val PLACEHOLDER_TOKEN = Regex("\\[(?:NAME|ABHA_NUMBER|ABHA_ADDRESS|ABHA|PHONE|ADDRESS|REG_NO|EMAIL|AADHAAR|UHID|ID|PIN|DOB|DATE|PAN|VID)\\]")
 
 val NAME_STOP_WORDS: Set<String> = setOf(
     "age", "sex", "gender", "dob", "d.o.b", "d.o.b.", "date", "dated",

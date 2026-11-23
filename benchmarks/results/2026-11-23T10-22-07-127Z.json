@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
   "kind": "benchmark",
-  "started_at": "2026-11-23T10:04:35.493Z",
-  "finished_at": "2026-11-23T10:04:37.490Z",
+  "started_at": "2026-11-23T10:22:07.127Z",
+  "finished_at": "2026-11-23T10:22:09.112Z",
   "argv": [
     "--driver",
     "browser",
     "--dataset",
-    "datasets/ekacare"
+    "datasets/bilingual-prescriptions"
   ],
   "environment": {
     "node": "v24.22.1",
@@ -20,13 +20,41 @@
     "headless": false,
     "pipelines": {
       "device": "On-device only (Nano): nano-read → nano-structure",
-      "cloud": "Cloud structure (gemini-3.5-flash-lite; OCR stays on-device): nano-read → deid → cloud-structure",
-      "hybrid": "Hybrid (Nano + de-identified cloud verify): nano-read → nano-structure → deid → cloud-verify"
+      "cloud": "Cloud baseline (sends the image): cloud-read → deid → cloud-structure",
+      "hybrid": "Hybrid (Nano read + de-identified cloud structure): nano-read → deid → cloud-structure"
     }
   },
   "dataset": {
-    "path": "datasets/ekacare",
-    "error": "dataset not imported"
+    "path": "datasets/bilingual-prescriptions",
+    "manifest_sha256": "1854b9a0b73ead2038e2d861ca531385cc92950e16ec1ed2afb145d7dc51f262",
+    "manifest_records": 600,
+    "excluded": [
+      {
+        "id": "bmpd-1-0063",
+        "reason": "conflicting_annotations: two different CSV transcriptions for 0063 (near-identical wording, punctuation variants); decided by Advisory 2026-11-23",
+        "found": true
+      },
+      {
+        "id": "bmpd-1-0185",
+        "reason": "conflicting_annotations: two CSV transcriptions for 0185 with different medications; decided by Advisory 2026-11-23",
+        "found": true
+      },
+      {
+        "id": "bmpd-1-0525",
+        "reason": "conflicting_annotations: two CSV transcriptions for 0525 with different medications; decided by Advisory 2026-11-23",
+        "found": true
+      }
+    ],
+    "n_samples": 597,
+    "limit": null,
+    "without_reference": [
+      {
+        "id": "bmpd-1-0186",
+        "reference_type": "none"
+      }
+    ],
+    "with_reference_text": 596,
+    "with_fields": 0
   },
   "pricing": {
     "source": "https://ai.google.dev/gemini-api/docs/pricing (Gemini Developer API, the backend Firebase AI Logic's GoogleAIBackend bills through)",
@@ -69,10 +97,6 @@
       "status": "NOT RUN",
       "blockers": [
         {
-          "reason": "/workspace/med-ocr/datasets/ekacare/manifest.jsonl not found (dir contains: DATASET_CARD.md). The EkaCare images and ground truth have not been imported yet. Run `HF_TOKEN=hf_... python3 scripts/import_datasets.py ekacare --limit 20` (needs pyarrow) after clicking \"Agree\" on the gated HF page ekacare/medical_records_parsing_validation_set.",
-          "owner": "Rachel (datasets/); the gated HF terms need an account that has clicked Agree"
-        },
-        {
           "reason": "Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = \"unavailable\"",
           "owner": "Sumit (needs an eligible machine) — see README hardware requirements"
         }
@@ -82,14 +106,6 @@
       "status": "NOT RUN",
       "blockers": [
         {
-          "reason": "/workspace/med-ocr/datasets/ekacare/manifest.jsonl not found (dir contains: DATASET_CARD.md). The EkaCare images and ground truth have not been imported yet. Run `HF_TOKEN=hf_... python3 scripts/import_datasets.py ekacare --limit 20` (needs pyarrow) after clicking \"Agree\" on the gated HF page ekacare/medical_records_parsing_validation_set.",
-          "owner": "Rachel (datasets/); the gated HF terms need an account that has clicked Agree"
-        },
-        {
-          "reason": "Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = \"unavailable\" (the cloud-only pipeline now runs OCR on-device: Cloud structure (gemini-3.5-flash-lite; OCR stays on-device): nano-read → deid → cloud-structure)",
-          "owner": "Sumit (needs an eligible machine) — see README hardware requirements"
-        },
-        {
           "reason": "app reports cloud unavailable: Firebase web config missing: apps/web/.env.local not filled (see apps/web/.env.example)",
           "owner": "Sumit (Firebase project config) / Avenger (apps/web)"
         }
@@ -98,10 +114,6 @@
     "hybrid": {
       "status": "NOT RUN",
       "blockers": [
-        {
-          "reason": "/workspace/med-ocr/datasets/ekacare/manifest.jsonl not found (dir contains: DATASET_CARD.md). The EkaCare images and ground truth have not been imported yet. Run `HF_TOKEN=hf_... python3 scripts/import_datasets.py ekacare --limit 20` (needs pyarrow) after clicking \"Agree\" on the gated HF page ekacare/medical_records_parsing_validation_set.",
-          "owner": "Rachel (datasets/); the gated HF terms need an account that has clicked Agree"
-        },
         {
           "reason": "Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = \"unavailable\"",
           "owner": "Sumit (needs an eligible machine) — see README hardware requirements"

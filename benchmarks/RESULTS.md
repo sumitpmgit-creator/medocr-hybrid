@@ -7,20 +7,22 @@ Harness self-tests (mock pipeline) are never shown here.
 
 _African Medical Records (CC-BY-4.0), hand-transcribed → CER/WER. No structured labels, so field accuracy is blank._
 
-Source: [`results/2026-11-23T10-04-33-290Z.json`](results/2026-11-23T10-04-33-290Z.json)
+Source: [`results/2026-11-23T10-22-05-042Z.json`](results/2026-11-23T10-22-05-042Z.json)
 
-- Run: 2026-11-23T10:04:33.290Z → 2026-11-23T10:04:35.312Z (UTC)
+- Run: 2026-11-23T10:22:05.042Z → 2026-11-23T10:22:07.008Z (UTC)
 - Dataset: `datasets/amr` — 3 documents (manifest sha256 `cfed1f27e52b`)
+- Manifest records: 3; excluded: 0; loaded: 3
+- With a reference transcription (eligible for CER/WER): 3
 - Driver: browser (Chrome/156.0.8078.47); host: Linux 6.12.113+ x64, 8 CPUs, 15.6 GB RAM
 - Pipeline for On-device only (Gemini Nano): On-device only (Nano): nano-read → nano-structure
-- Pipeline for Cloud (Firebase AI Logic): Cloud structure (gemini-3.5-flash-lite; OCR stays on-device): nano-read → deid → cloud-structure
-- Pipeline for Hybrid: Hybrid (Nano + de-identified cloud verify): nano-read → nano-structure → deid → cloud-verify
+- Pipeline for Cloud (Firebase AI Logic): Cloud baseline (sends the image): cloud-read → deid → cloud-structure
+- Pipeline for Hybrid: Hybrid (Nano read + de-identified cloud structure): nano-read → deid → cloud-structure
 
-| Mode | Status | Docs | CER ↓ | WER ↓ | Field accuracy ↑ | Latency p50 | Latency p95 | Est. cost / doc | Est. cost / 1k docs | Bytes sent to cloud / doc | Errors |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| On-device only (Gemini Nano) | **NOT RUN** | — | — | — | — | — | — | — | — | — | — |
-| Cloud (Firebase AI Logic) | **NOT RUN** | — | — | — | — | — | — | — | — | — | — |
-| Hybrid | **NOT RUN** | — | — | — | — | — | — | — | — | — | — |
+| Mode | Status | Docs | CER/WER docs scored | CER ↓ | WER ↓ | Field accuracy ↑ | Latency p50 | Latency p95 | Est. cost / doc | Est. cost / 1k docs | Bytes sent to cloud / doc | Errors |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| On-device only (Gemini Nano) | **NOT RUN** | — | — | — | — | — | — | — | — | — | — | — |
+| Cloud (Firebase AI Logic) | **NOT RUN** | — | — | — | — | — | — | — | — | — | — | — |
+| Hybrid | **NOT RUN** | — | — | — | — | — | — | — | — | — | — | — |
 
 **De-identification leak check**: identifiers from the reference data (values masked; see README for the rules)
 
@@ -36,7 +38,47 @@ _On-device only (Gemini Nano) — NOT RUN_
 - Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = "unavailable" _(owner: Sumit (needs an eligible machine) — see README hardware requirements)_
 
 _Cloud (Firebase AI Logic) — NOT RUN_
-- Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = "unavailable" (the cloud-only pipeline now runs OCR on-device: Cloud structure (gemini-3.5-flash-lite; OCR stays on-device): nano-read → deid → cloud-structure) _(owner: Sumit (needs an eligible machine) — see README hardware requirements)_
+- app reports cloud unavailable: Firebase web config missing: apps/web/.env.local not filled (see apps/web/.env.example) _(owner: Sumit (Firebase project config) / Avenger (apps/web))_
+
+_Hybrid — NOT RUN_
+- Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = "unavailable" _(owner: Sumit (needs an eligible machine) — see README hardware requirements)_
+- app reports cloud unavailable: Firebase web config missing: apps/web/.env.local not filled (see apps/web/.env.example) _(owner: Sumit (Firebase project config) / Avenger (apps/web))_
+
+## datasets/bilingual-prescriptions
+
+_Image-to-Text Bilingual Dataset from Medical Prescriptions, Mendeley v1 (DOI 10.17632/tg2hm7n2bs.1, CC-BY-4.0; Badhon et al., Bangabandhu Sheikh Mujibur Rahman Digital University). Handwritten prescriptions from Gazipur, Bangladesh, in Bangla and English. CER/WER are scored against the English `reference_text`. CAVEAT: the source CSV calls these "descriptions"/"captions" ("Dexa U tablet should be taken twice daily…"), not verbatim transcriptions, so CER/WER here measure distance from a normalised caption, not pure OCR error. Do not compare them with AMR numbers._
+
+Source: [`results/2026-11-23T10-22-07-127Z.json`](results/2026-11-23T10-22-07-127Z.json)
+
+- Run: 2026-11-23T10:22:07.127Z → 2026-11-23T10:22:09.112Z (UTC)
+- Dataset: `datasets/bilingual-prescriptions` — 597 documents (manifest sha256 `1854b9a0b73e`)
+- Manifest records: 600; excluded: 3 (`bmpd-1-0063` — conflicting_annotations; `bmpd-1-0185` — conflicting_annotations; `bmpd-1-0525` — conflicting_annotations; see `benchmarks/exclusions.json`); loaded: 597
+- With a reference transcription (eligible for CER/WER): 596; no reference: `bmpd-1-0186` (reference_type none)
+- Driver: browser (Chrome/156.0.8078.47); host: Linux 6.12.113+ x64, 8 CPUs, 15.6 GB RAM
+- Pipeline for On-device only (Gemini Nano): On-device only (Nano): nano-read → nano-structure
+- Pipeline for Cloud (Firebase AI Logic): Cloud baseline (sends the image): cloud-read → deid → cloud-structure
+- Pipeline for Hybrid: Hybrid (Nano read + de-identified cloud structure): nano-read → deid → cloud-structure
+
+| Mode | Status | Docs | CER/WER docs scored | CER ↓ | WER ↓ | Field accuracy ↑ | Latency p50 | Latency p95 | Est. cost / doc | Est. cost / 1k docs | Bytes sent to cloud / doc | Errors |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| On-device only (Gemini Nano) | **NOT RUN** | — | — | — | — | — | — | — | — | — | — | — |
+| Cloud (Firebase AI Logic) | **NOT RUN** | — | — | — | — | — | — | — | — | — | — | — |
+| Hybrid | **NOT RUN** | — | — | — | — | — | — | — | — | — | — | — |
+
+**De-identification leak check**: identifiers from the reference data (values masked; see README for the rules)
+
+| Mode | Identifiers checked | Leaks in de-id stage output | Leaks in cloud payloads | Leaked types | Full image uploaded |
+|---|---|---|---|---|---|
+| On-device only (Gemini Nano) | **NOT RUN** | — | — | — | — |
+| Cloud (Firebase AI Logic) | **NOT RUN** | — | — | — | — |
+| Hybrid | **NOT RUN** | — | — | — | — |
+
+**Modes not run**
+
+_On-device only (Gemini Nano) — NOT RUN_
+- Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = "unavailable" _(owner: Sumit (needs an eligible machine) — see README hardware requirements)_
+
+_Cloud (Firebase AI Logic) — NOT RUN_
 - app reports cloud unavailable: Firebase web config missing: apps/web/.env.local not filled (see apps/web/.env.example) _(owner: Sumit (Firebase project config) / Avenger (apps/web))_
 
 _Hybrid — NOT RUN_
@@ -47,20 +89,20 @@ _Hybrid — NOT RUN_
 
 _EkaCare medical records parsing set (MIT, gated). Images + rubrics only, no transcriptions → no CER/WER; used for latency, cost, bytes sent, and field checks where labels exist._
 
-Source: [`results/2026-11-23T10-04-35-493Z.json`](results/2026-11-23T10-04-35-493Z.json)
+Source: [`results/2026-11-23T10-22-09-242Z.json`](results/2026-11-23T10-22-09-242Z.json)
 
-- Run: 2026-11-23T10:04:35.493Z → 2026-11-23T10:04:37.490Z (UTC)
+- Run: 2026-11-23T10:22:09.242Z → 2026-11-23T10:22:11.195Z (UTC)
 - Dataset: `datasets/ekacare` — 0 documents — **dataset not imported**
 - Driver: browser (Chrome/156.0.8078.47); host: Linux 6.12.113+ x64, 8 CPUs, 15.6 GB RAM
 - Pipeline for On-device only (Gemini Nano): On-device only (Nano): nano-read → nano-structure
-- Pipeline for Cloud (Firebase AI Logic): Cloud structure (gemini-3.5-flash-lite; OCR stays on-device): nano-read → deid → cloud-structure
-- Pipeline for Hybrid: Hybrid (Nano + de-identified cloud verify): nano-read → nano-structure → deid → cloud-verify
+- Pipeline for Cloud (Firebase AI Logic): Cloud baseline (sends the image): cloud-read → deid → cloud-structure
+- Pipeline for Hybrid: Hybrid (Nano read + de-identified cloud structure): nano-read → deid → cloud-structure
 
-| Mode | Status | Docs | CER ↓ | WER ↓ | Field accuracy ↑ | Latency p50 | Latency p95 | Est. cost / doc | Est. cost / 1k docs | Bytes sent to cloud / doc | Errors |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| On-device only (Gemini Nano) | **NOT RUN** | — | — | — | — | — | — | — | — | — | — |
-| Cloud (Firebase AI Logic) | **NOT RUN** | — | — | — | — | — | — | — | — | — | — |
-| Hybrid | **NOT RUN** | — | — | — | — | — | — | — | — | — | — |
+| Mode | Status | Docs | CER/WER docs scored | CER ↓ | WER ↓ | Field accuracy ↑ | Latency p50 | Latency p95 | Est. cost / doc | Est. cost / 1k docs | Bytes sent to cloud / doc | Errors |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| On-device only (Gemini Nano) | **NOT RUN** | — | — | — | — | — | — | — | — | — | — | — |
+| Cloud (Firebase AI Logic) | **NOT RUN** | — | — | — | — | — | — | — | — | — | — | — |
+| Hybrid | **NOT RUN** | — | — | — | — | — | — | — | — | — | — | — |
 
 **De-identification leak check**: identifiers from the reference data (values masked; see README for the rules)
 
@@ -73,22 +115,21 @@ Source: [`results/2026-11-23T10-04-35-493Z.json`](results/2026-11-23T10-04-35-49
 **Modes not run**
 
 _On-device only (Gemini Nano) — NOT RUN_
-- /workspace/med-ocr/datasets/ekacare/manifest.jsonl not found (dir contains: DATASET_CARD.md). The EkaCare images and ground truth have not been imported yet. Run `HF_TOKEN=hf_... python3 scripts/import_datasets.py ekacare --limit 20` (needs pyarrow) after clicking "Agree" on the gated HF page ekacare/medical_records_parsing_validation_set. _(owner: Rachel (datasets/); the gated HF terms need an account that has clicked Agree)_
+- /workspace/med-ocr/datasets/ekacare/manifest.jsonl not found (dir contains: DATASET_CARD.md, README.md, dataset.json). The EkaCare images and ground truth have not been imported yet. Run `HF_TOKEN=hf_... python3 scripts/import_datasets.py ekacare --limit 20` (needs pyarrow) after clicking "Agree" on the gated HF page ekacare/medical_records_parsing_validation_set. _(owner: Rachel (datasets/); the gated HF terms need an account that has clicked Agree)_
 - Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = "unavailable" _(owner: Sumit (needs an eligible machine) — see README hardware requirements)_
 
 _Cloud (Firebase AI Logic) — NOT RUN_
-- /workspace/med-ocr/datasets/ekacare/manifest.jsonl not found (dir contains: DATASET_CARD.md). The EkaCare images and ground truth have not been imported yet. Run `HF_TOKEN=hf_... python3 scripts/import_datasets.py ekacare --limit 20` (needs pyarrow) after clicking "Agree" on the gated HF page ekacare/medical_records_parsing_validation_set. _(owner: Rachel (datasets/); the gated HF terms need an account that has clicked Agree)_
-- Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = "unavailable" (the cloud-only pipeline now runs OCR on-device: Cloud structure (gemini-3.5-flash-lite; OCR stays on-device): nano-read → deid → cloud-structure) _(owner: Sumit (needs an eligible machine) — see README hardware requirements)_
+- /workspace/med-ocr/datasets/ekacare/manifest.jsonl not found (dir contains: DATASET_CARD.md, README.md, dataset.json). The EkaCare images and ground truth have not been imported yet. Run `HF_TOKEN=hf_... python3 scripts/import_datasets.py ekacare --limit 20` (needs pyarrow) after clicking "Agree" on the gated HF page ekacare/medical_records_parsing_validation_set. _(owner: Rachel (datasets/); the gated HF terms need an account that has clicked Agree)_
 - app reports cloud unavailable: Firebase web config missing: apps/web/.env.local not filled (see apps/web/.env.example) _(owner: Sumit (Firebase project config) / Avenger (apps/web))_
 
 _Hybrid — NOT RUN_
-- /workspace/med-ocr/datasets/ekacare/manifest.jsonl not found (dir contains: DATASET_CARD.md). The EkaCare images and ground truth have not been imported yet. Run `HF_TOKEN=hf_... python3 scripts/import_datasets.py ekacare --limit 20` (needs pyarrow) after clicking "Agree" on the gated HF page ekacare/medical_records_parsing_validation_set. _(owner: Rachel (datasets/); the gated HF terms need an account that has clicked Agree)_
+- /workspace/med-ocr/datasets/ekacare/manifest.jsonl not found (dir contains: DATASET_CARD.md, README.md, dataset.json). The EkaCare images and ground truth have not been imported yet. Run `HF_TOKEN=hf_... python3 scripts/import_datasets.py ekacare --limit 20` (needs pyarrow) after clicking "Agree" on the gated HF page ekacare/medical_records_parsing_validation_set. _(owner: Rachel (datasets/); the gated HF terms need an account that has clicked Agree)_
 - Gemini Nano image input not available in this Chrome (Chrome/156.0.8078.47) on this machine: LanguageModel.availability({expectedInputs:[{type:'image'}]}) = "unavailable" _(owner: Sumit (needs an eligible machine) — see README hardware requirements)_
 - app reports cloud unavailable: Firebase web config missing: apps/web/.env.local not filled (see apps/web/.env.example) _(owner: Sumit (Firebase project config) / Avenger (apps/web))_
 
 ## How each column is measured
 
-- **CER / WER**: Levenshtein edits ÷ reference length over NFKC-normalised, lower-cased, whitespace-collapsed text, micro-averaged over documents that have a `reference_text`. "—" means no document had one.
+- **CER / WER**: Levenshtein edits ÷ reference length over normalised text (NFC; zero-width joiners removed; quotes/dashes/fractions folded; space after danda; lower-cased; whitespace collapsed; see README "Normalisation"), micro-averaged over documents that have a `reference_text`. "—" means no document had one.
 - **Field accuracy**: every leaf of the ground-truth `fields` JSON is one field; exact match after value normalisation (case, whitespace, trailing punctuation, numeric form). Missing = wrong; extra predicted fields are ignored. Micro-averaged.
 - **Latency**: wall-clock per document as seen by the harness (nearest-rank p50/p95), documents run sequentially, failed documents excluded.
 - **Cost**: token counts reported by the pipeline (Firebase AI Logic `usageMetadata`) × rates in `benchmarks/pricing.json` — Paid tier, Standard (non-batch), USD per 1M tokens, text/image input, source https://ai.google.dev/gemini-api/docs/pricing (Gemini Developer API, the backend Firebase AI Logic's GoogleAIBackend bills through), retrieved 2026-11-23. On-device calls are $0 API cost. "—" = cost unknown (no usage reported), never guessed.

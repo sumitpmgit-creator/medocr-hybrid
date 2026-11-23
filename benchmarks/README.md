@@ -6,8 +6,8 @@ CER, WER, field accuracy, latency p50/p95, estimated cost, and bytes sent to the
 | Mode | Pipeline (`apps/web/src/stages.ts`) | Where it runs |
 |---|---|---|
 | `device` | `on-device-only`: nano-read → nano-structure | Gemini Nano via Firebase AI Logic `ONLY_ON_DEVICE` |
-| `cloud` | `cloud-only`: nano-read → deid → cloud-structure (as of 2026-11-23 15:33 IST) | OCR on-device, then only de-identified text goes to `gemini-3.5-flash-lite` via `ONLY_IN_CLOUD`. **Needs Nano too** |
-| `hybrid` | `hybrid`: nano-read → nano-structure → deid → cloud-verify | Nano, then only low-confidence entities with a de-identified transcript (no image) go to the cloud |
+| `cloud` | `cloud-only` ("Cloud baseline"): cloud-read → deid → cloud-structure | `gemini-3.5-flash-lite` via `ONLY_IN_CLOUD`. **The full page image is uploaded** for the read stage; only de-identified text goes to structuring. No Nano needed, so it runs on this box once Firebase is configured |
+| `hybrid` | `hybrid`: nano-read → deid → cloud-structure | Nano reads on-device; only de-identified text (no image) goes to the cloud |
 
 Outputs:
 - `results/<UTC timestamp>.json`: the full record: environment, dataset hash, pricing used, per-mode summary, per-document detail.
@@ -23,6 +23,9 @@ From the repo root, `/workspace/med-ocr`, with Node ≥ 23.6 (TypeScript type-st
 ```bash
 # 1. Real benchmark, all three modes, CER/WER set (African Medical Records):
 node benchmarks/src/run.ts --driver browser --dataset datasets/amr
+
+# 1b. Second CER/WER set: Bilingual Prescriptions v1 (Bangla + English, 600 records; 3 excluded, see below):
+node benchmarks/src/run.ts --driver browser --dataset datasets/bilingual-prescriptions
 
 # 2. Real benchmark on EkaCare (latency / cost / bytes; no transcriptions so no CER/WER):
 HF_TOKEN=hf_... python3 scripts/import_datasets.py ekacare --limit 20   # Rachel's importer, gated dataset
@@ -61,16 +64,39 @@ The shared box does **not** qualify: no GPU, 15.6 GiB RAM, and Chrome 156 report
 
 ## How it measures (summary; full text is at the bottom of RESULTS.md)
 
-- **CER/WER:** Levenshtein over normalised text (NFKC, lower case, collapsed whitespace), micro-averaged, on the raw OCR stage output (see below).
+- **CER/WER:** Levenshtein over normalised text (see "Normalisation" below), micro-averaged, on the raw OCR stage output (see below).
 - **Field accuracy:** every leaf of `referenceDoc` is one field; exact match after normalisation. Medications are keyed by `name` and labs by `test`, so entry order doesn't matter. A missing field counts as wrong. `confidence`, `sourceText`, `bbox` and `abstentions` are ignored.
 - **Latency:** harness wall-clock per document, run sequentially. Warm-up (Nano prepare, Remote Config) is excluded. The page decodes the image from base64 before running, which adds a few ms.
 - **Cost:** reported token usage (`usageMetadata`) × `pricing.json` (Gemini Developer API paid tier, retrieved 2026-11-23 from https://ai.google.dev/gemini-api/docs/pricing; `gemini-3.5-flash-lite` = $0.30 / 1M input, $2.50 / 1M output). On-device calls cost $0. If usage is missing, cost shows as unknown rather than estimated.
 - **Bytes sent:** Chrome DevTools Network domain on the page target. It counts the request line, headers and body for every request to a non-loopback host, independent of what the pipeline self-reports (which is kept in the JSON as `self_reported`). Limitation: traffic from service or web workers is not metered. On-device mode is expected to show 0, and any non-zero value is flagged as a PRIVACY caveat.
 
+## Datasets and exclusions
+
+| Dataset | Records | Excluded | Scored for CER/WER | Notes |
+|---|---|---|---|---|
+| `datasets/amr` | 3 | 0 | 3 | African Medical Records, CC-BY-4.0, verbatim transcriptions |
+| `datasets/bilingual-prescriptions` | 600 | 3 (`bmpd-1-0063`, `bmpd-1-0185`, `bmpd-1-0525`) | 596 | Mendeley v1, DOI 10.17632/tg2hm7n2bs.1, **CC-BY-4.0** (per Rachel's dataset README: DataCite rightsList + Mendeley licence field). `bmpd-1-0186` has `reference_type: none`, so it runs but isn't scored |
+| `datasets/ekacare` | not imported | — | 0 | no transcriptions, so latency, cost and bytes only |
+
+- Exclusions live in `benchmarks/exclusions.json`, by dataset path, and each one needs a reason. The three bilingual exclusions are the CSV's duplicate keys with conflicting transcriptions (`annotation_issues: conflicting_annotations`), excluded on Advisory's decision of 2026-11-23. Each results JSON records `manifest_records`, `excluded[]` (with `found`), `n_samples`, `with_reference_text`, `without_reference[]`, and per mode `cer_wer_docs_scored` (the count actually scored). RESULTS.md shows these.
+- **Bilingual caveats.** The script is **Bangla (Bengali), not Devanagari**: the images come from Gazipur, Bangladesh. CER/WER are scored against the English `reference_text`. The source CSV calls these fields "descriptions"/"captions" ("…tablet should be taken twice daily…"), not verbatim copies of the handwriting, so CER/WER here measure distance from a normalised caption, not pure OCR error. Report them separately from AMR and don't average the two sets. `reference_text_bangla` is kept in the manifest but not scored.
+- **Leak check on bilingual.** The rules run on it too, but find 0 identifiers, because the source redacted personal identifiers before release (dataset README). Leak rates there will be 0/0 (shown as —). The *Full image uploaded* count still applies.
+
+## Normalisation (CER/WER; same for hypothesis and reference)
+
+`src/metrics.ts normalizeText`, unit-tested in `test/metrics.test.ts`:
+1. **Unicode NFC** (canonical composition). This unifies precomposed and decomposed forms, e.g. Bengali য় U+09DF ≡ য U+09AF + ় U+09BC, and Devanagari क़ U+0958 ≡ क + ़. 172 of the 600 Bangla references aren't NFC as shipped. **NFKC is not used**: it rewrites `½` as `1⁄2` and folds compatibility forms in ways that differ by script.
+2. Zero-width joiner and non-joiner (U+200C/U+200D), zero-width space, word joiner, BOM and soft hyphen are removed. In Indic scripts they only change conjunct and half-form shaping.
+3. Typography is folded: curly quotes become straight, dashes and minus become `-`, the fraction slash becomes `/`, and vulgar fractions become `n/d` (`½` → `1/2`; the bilingual references use them).
+4. Danda `।` and double danda `॥` get a following space, because the Bangla references often omit it ("হবে।একই").
+5. Text is lower-cased (Latin only, since Bengali and Devanagari have no case), and whitespace runs, including newlines, collapse to a single space.
+6. **Not done:** digit transliteration (`৬` ≠ `6`), punctuation removal, and spelling or transliteration matching between scripts.
+CER counts Unicode code points, not grapheme clusters, so a Bengali conjunct like ক্ষ is 3 code points.
+
 ## CER/WER source (raw OCR, not de-identified)
 
 CER/WER score the **raw OCR stage output**, picked from the pipeline trace by stage name (`nano-read` /
-`cloud-read`, else `stageKind: 'ocr'`), against the unchanged AMR `referenceText`. De-id output is never scored.
+`cloud-read`, else `stageKind: 'ocr'`). This was checked on 2026-11-23 against Avenger's chains: cloud uses `cloud-read`, while hybrid and device use `nano-read`, against the unchanged AMR `referenceText`. De-id output is never scored.
 Each document's `ocr_text_source` in the JSON shows which stage was used. Stage names and shapes are in CONTRACT.md §2.
 
 ## De-id leak check

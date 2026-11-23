@@ -2,16 +2,16 @@
 /**
  * On-device de-identification and the fail-closed cloud gate.
  *
- * - `deidentify` comes from `@med-ocr/core` (text only; it does not cover images).
- * - `assertSafeForCloud` is imported from `@med-ocr/parsing` (do not reimplement).
- *   TODO: switch this import to `@med-ocr/core` once Louis lands the deid superset.
+ * `deidentify`, `assertSafeForCloud`, and `UnsafeForCloudError` all come from
+ * `@med-ocr/core` (text only; they do not cover images). Do not reimplement
+ * the guard, and do not import `@med-ocr/parsing` (the package root re-exports
+ * Node dataset loaders).
  *
- * Because neither core nor parsing de-id inspects pixels, this app never sends
- * page images or field crops to the cloud — only de-identified text, and only
- * after `assertSafeForCloud` succeeds.
+ * Text payloads are gated by assertSafeForCloud. The optional cloud baseline
+ * (`cloud-read`) sends the page image; hybrid never does. Core de-id does not
+ * inspect pixels, so PHI-bearing crops are not sent.
  */
-import { deidentify, type ClinicalDoc, type DeidResult, type PhiType } from '@med-ocr/core';
-import { assertSafeForCloud, UnsafeForCloudError } from '@med-ocr/parsing';
+import { assertSafeForCloud, deidentify, UnsafeForCloudError, type ClinicalDoc, type DeidResult, type PhiType } from '@med-ocr/core';
 
 export { assertSafeForCloud, UnsafeForCloudError };
 

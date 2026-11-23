@@ -97,6 +97,23 @@ describe.skipIf(!web?.pipelines || !C.runPipeline)('OFFLINE: apps/web pipelines 
   });
 });
 
+describe.skipIf(!web?.pipelines || !C.runPipeline)('OFFLINE: stalled cloud call (apps/web, dynamic)', () => {
+  let spy: EgressSpy; let nano: NanoMock;
+  beforeEach(() => {
+    spy = new EgressSpy().install().hang(); setOnline(true);
+    nano = installNanoMock({ respond: (p) => (p.includes('Extract medications') ? JSON.stringify(LOW) : CLEAN_RX) });
+    const R = qa(); R.nano = nano; R.calls = [];
+  });
+  afterEach(() => { spy.uninstall(); nano.uninstall(); });
+  it('OFF-13 hybrid: a stalled cloud call is cancelled by the caller\'s AbortSignal and the run returns the on-device result within 1.5 s', async () => {
+    const ac = new AbortController(); setTimeout(() => ac.abort(new DOMException('user cancelled', 'AbortError')), 50);
+    const r = await within(C.runPipeline(P('hybrid'), input, { docId: 'stall', signal: ac.signal }), 1500);
+    expect(r, 'hybrid hung on a stalled cloud call').not.toBe('TIMEOUT');
+    expect((r as any).final.kind).toBe('fields');
+    expect(JSON.stringify((r as any).steps.at(-1).notes)).toMatch(/timeout|cancel/i);
+  });
+});
+
 describe.skipIf(!C.runPipeline)('OFFLINE: core runner cancellation (hung cloud calls)', () => {
   it('OFF-10 an aborted AbortSignal stops a hung stage: runPipeline returns within 1 s', async () => {
     const ac = new AbortController();
