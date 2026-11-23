@@ -13,7 +13,7 @@ import type { Pipeline, PipelineRun, Stage, StageData, StageMetrics, StageResult
 import { emptyMetrics, newRunId } from './pipeline.js';
 import { describeStage } from './stage.js';
 import { NORMALIZATION_VERSION } from './normalize.js';
-import { CloudSafetyError, gateCloudStage, isUndeclaredEgress, type CloudSafetyDecision, type CloudSafetyPolicy } from './cloud-safety.js';
+import { CloudSafetyError, gateCloudStage, isUndeclaredEgress, undeclaredEgressMode, type CloudSafetyDecision, type CloudSafetyPolicy } from './cloud-safety.js';
 import { assertSerializable, hashValue, toSerializable } from './hash.js';
 import { CHECKPOINT_SCHEMA_VERSION, checkpointKey, type AttemptRecord, type CheckpointRecord, type CheckpointStore } from './checkpoint.js';
 
@@ -266,14 +266,30 @@ export async function runPipelineResumable(pipeline: Pipeline, input: StageData,
       continue;
     }
 
+    let safetyRec: Partial<StageRunRecord> = safety;
+    if (isUndeclaredEgress(stage, result)) {
+      const leak = `undeclared egress from ${stage.id} (site ${result.site}, ${result.metrics.bytesSent} bytes)`;
+      if (undeclaredEgressMode(stage, opts.cloudSafety) === 'fail') {
+        // The data has already left; refuse the output so nothing downstream uses it, and fail the run.
+        const err = new CloudSafetyError(stage.id, 'undeclared_egress', `${leak}; output discarded. Declare meta.runtime 'cloud' (or sendsDataOffDevice) so the guard runs first`);
+        privacyFlags.push(`blocked ${leak}: output discarded`);
+        if (opts.cloudSafety?.throwOnBlock) throw err;
+        const blocked: StageResult = { ...result, output: current, error: err.message };
+        steps.push(blocked);
+        totals = addMetrics(totals, result.metrics);
+        records.push({ ...base, inputHash, status: 'blocked', rerunReason: reason, attempts, durationMs, error: err.message, cloudSafety: 'blocked', blockedReason: 'undeclared_egress' });
+        if (store) {
+          await store.put({ schemaVersion: CHECKPOINT_SCHEMA_VERSION, key, pipelineId: pipeline.id, docId: opts.docId, stageIndex: index, stageId: stage.id, stageVersion: meta.version, inputHash, status: 'failed', result: toSerializable(blocked), attempts, runId, finishedAt: clock().toISOString() });
+        }
+        failure = { error: err.message, aborted: false };
+        continue;
+      }
+      safetyRec = { cloudSafety: 'undeclared_egress' };
+      privacyFlags.push(`${leak}: declare meta.runtime 'cloud' so the guard can run first`);
+    }
     const outputHash = hashValue(result.output);
     steps.push(result);
     totals = addMetrics(totals, result.metrics);
-    let safetyRec: Partial<StageRunRecord> = safety;
-    if (isUndeclaredEgress(stage, result)) {
-      safetyRec = { cloudSafety: 'undeclared_egress' };
-      privacyFlags.push(`undeclared egress from ${stage.id} (site ${result.site}, ${result.metrics.bytesSent} bytes): declare meta.runtime 'cloud' so the guard can run first`);
-    }
     if (stage.kind === 'deid') deidCompleted = true;
     records.push({ ...base, inputHash, outputHash, status: 'executed', rerunReason: reason, attempts, durationMs, ...safetyRec });
     if (store) {
