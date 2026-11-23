@@ -12,7 +12,7 @@
     "results": "node scripts/record-results.mjs"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "vitest": "5.1.1"
   }
 }
