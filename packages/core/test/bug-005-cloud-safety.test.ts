@@ -78,11 +78,11 @@ describe('BUG-005: fail-closed cloud egress', () => {
     expect(received).toHaveLength(0);
   });
 
-  it('legacy stages that do not declare egress but report in_cloud fail the run by default, or are flagged with undeclaredEgress: warn', async () => {
+  it('legacy stages with no meta are refused by default, or are flagged with undeclaredEgress: warn', async () => {
     const legacy: Stage = { id: 'old-cloud', name: 'x', kind: 'structure', accepts: ['text'], run: async (i) => ({ stageId: 'old-cloud', stageKind: 'structure', site: 'in_cloud', output: i, metrics: { latencyMs: 1, costUsd: 0, bytesSent: 120 } }) };
     const run = await runPipeline({ id: 'p', name: 'p', stages: [deviceOcr, legacy] }, image, { docId: 'd' });
     expect(run.failed).toBe(true);
-    expect(run.record.stages[1]).toMatchObject({ status: 'blocked', blockedReason: 'undeclared_egress' });
+    expect(run.record.stages[1]).toMatchObject({ status: 'blocked', blockedReason: 'no_meta' }); // refused before it runs
     const warned = await runPipeline({ id: 'p', name: 'p', stages: [deviceOcr, legacy] }, image, { docId: 'd', cloudSafety: { undeclaredEgress: 'warn' } });
     expect(warned.record.stages[1]!.cloudSafety).toBe('undeclared_egress');
     expect(warned.record.privacyFlags[0]).toMatch(/undeclared egress from old-cloud/);

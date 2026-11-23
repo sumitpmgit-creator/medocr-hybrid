@@ -26,8 +26,8 @@ describe('Benchmark C summary', () => {
   it('aggregates accuracy, latency, failures, retries, register and rules id; failed docs stay in the denominator', async () => {
     const gold: ClinicalDoc = { documentType: 'prescription', labResults: [], medications: [{ name: 'Augmentin', strength: '625 mg', frequency: 'BD' }] };
     let n = 0;
-    const ocr: Stage = { id: 'ocr', name: 'o', kind: 'ocr', accepts: ['image'], run: async () => { n++; if (n === 3) throw new Error('boom'); return { stageId: 'ocr', stageKind: 'ocr', site: 'server_gpu', output: { kind: 'text', text: 'Augmentin 625 mg BD' }, metrics: { latencyMs: n * 100, costUsd: 0, bytesSent: 0 } }; } };
-    const llm: Stage = { id: 'llm', name: 'l', kind: 'structure', accepts: ['text'], run: async (i) => ({ stageId: 'llm', stageKind: 'structure', site: 'server_gpu', output: { kind: 'fields', doc: n === 2 ? { ...gold, medications: [{ ...gold.medications[0]!, frequency: 'TDS' }] } : gold, text: i.kind === 'text' ? i.text : undefined }, metrics: { latencyMs: 10, costUsd: 0, bytesSent: 0 } }) };
+    const ocr: Stage = { id: 'ocr', name: 'o', kind: 'ocr', accepts: ['image'], meta: { runtime: 'local-oss' }, run: async () => { n++; if (n === 3) throw new Error('boom'); return { stageId: 'ocr', stageKind: 'ocr', site: 'server_gpu', output: { kind: 'text', text: 'Augmentin 625 mg BD' }, metrics: { latencyMs: n * 100, costUsd: 0, bytesSent: 0 } }; } };
+    const llm: Stage = { id: 'llm', name: 'l', kind: 'structure', accepts: ['text'], meta: { runtime: 'local-oss' }, run: async (i) => ({ stageId: 'llm', stageKind: 'structure', site: 'server_gpu', output: { kind: 'fields', doc: n === 2 ? { ...gold, medications: [{ ...gold.medications[0]!, frequency: 'TDS' }] } : gold, text: i.kind === 'text' ? i.text : undefined }, metrics: { latencyMs: 10, costUsd: 0, bytesSent: 0 } }) };
     const p = { id: 'p', name: 'p', stages: [ocr, llm] };
     const runs = [];
     for (const d of ['d1', 'd2', 'd3']) runs.push(await runPipeline(p, image, { docId: d }));

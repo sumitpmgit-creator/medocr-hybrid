@@ -31,7 +31,7 @@ import { FsCheckpointStore } from '@med-ocr/core/node'; // Node only
   - `cloudSafety.exempt: [stageId]` records explicit consent for a stage.
   - Undeclared egress (a stage without egress meta reports `site: 'in_cloud'` or `bytesSent > 0`) follows `cloudSafety.undeclaredEgress`:
     - `'warn'` flags it in `record.privacyFlags`;
-    - `'fail'` (default) blocks the stage after the fact: its output is discarded and the run fails. The data has already left, so this cannot undo the send; it makes the leak loud and stops it from spreading.
+    - `'fail'` (default) is fully fail-closed: a stage with no `meta` at all is refused before it runs (`no_meta`, so it is never executed). A stage with meta that still sends data is blocked after the fact: its output is discarded and the run fails. The data has already left, so this cannot undo the send; it makes the leak loud and stops it from spreading.
 
 ## Scoring
 - **Benchmark A** (`text-metrics.ts`, `benchmark.ts`): `cer`, `wer`, `omissionInvention`, `numericAccuracy`, a symmetric `similarity`, and `scoreTranscription` (exact match plus abbreviation accuracy).

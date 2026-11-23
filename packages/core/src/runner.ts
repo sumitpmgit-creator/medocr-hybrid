@@ -13,7 +13,7 @@ import type { Pipeline, PipelineRun, Stage, StageData, StageMetrics, StageResult
 import { emptyMetrics, newRunId } from './pipeline.js';
 import { describeStage } from './stage.js';
 import { NORMALIZATION_VERSION } from './normalize.js';
-import { CloudSafetyError, gateCloudStage, isUndeclaredEgress, undeclaredEgressMode, type CloudSafetyDecision, type CloudSafetyPolicy } from './cloud-safety.js';
+import { CloudSafetyError, gateCloudStage, isUndeclaredEgress, refuseUndeclaredStage, undeclaredEgressMode, type CloudSafetyDecision, type CloudSafetyPolicy } from './cloud-safety.js';
 import { assertSerializable, hashValue, toSerializable } from './hash.js';
 import { CHECKPOINT_SCHEMA_VERSION, checkpointKey, type AttemptRecord, type CheckpointRecord, type CheckpointStore } from './checkpoint.js';
 
@@ -147,6 +147,21 @@ export async function runPipelineResumable(pipeline: Pipeline, input: StageData,
       const error = `Stage ${stage.id} does not accept input kind "${current.kind}"`;
       records.push({ ...base, status: 'failed', attempts: [], durationMs: 0, error });
       failure = { error, aborted: false };
+      continue;
+    }
+
+    // ---- fully fail-closed: in 'fail' mode a stage with no meta at all never runs
+    const refusal = refuseUndeclaredStage(stage, opts.cloudSafety);
+    if (refusal) {
+      if (opts.cloudSafety?.throwOnBlock) throw refusal;
+      const inputHash = stageInputHash(stage, current, opts.config);
+      records.push({ ...base, inputHash, status: 'blocked', attempts: [], durationMs: 0, error: refusal.message, cloudSafety: 'blocked', blockedReason: 'no_meta' });
+      privacyFlags.push(`blocked ${stage.id}: no_meta`);
+      if (store) {
+        const failed: StageResult = { stageId: stage.id, stageKind: stage.kind, site: 'local_code', output: current, metrics: emptyMetrics(), error: refusal.message };
+        await store.put({ schemaVersion: CHECKPOINT_SCHEMA_VERSION, key: checkpointKey(pipeline.id, opts.docId, index, stage.id), pipelineId: pipeline.id, docId: opts.docId, stageIndex: index, stageId: stage.id, stageVersion: meta.version, inputHash, status: 'failed', result: toSerializable(failed), attempts: [], runId, finishedAt: clock().toISOString() });
+      }
+      failure = { error: refusal.message, aborted: false };
       continue;
     }
 

@@ -17,6 +17,8 @@
  *  - 'fail': the stage is recorded as blocked, its output is discarded (nothing downstream sees it,
  *    no completed checkpoint is stored) and the run fails. The data has already left by then; 'fail'
  *    makes the leak loud and stops it from propagating, it cannot undo it.
+ *    In 'fail' mode the guard is fully fail-closed: a stage with no `meta` at all (so it cannot say
+ *    whether it sends data off the device) is refused BEFORE it runs (blockedReason 'no_meta').
  */
 import type { Stage, StageData, StageResult } from './types.js';
 import { describeStage } from './stage.js';
@@ -25,7 +27,7 @@ import { assertSafeForCloud, UnsafeForCloudError } from './deid.js';
 /** Throws if `text` is not safe to send to the cloud. Must not include the offending values in its message. */
 export type CloudSafetyCheck = (text: string) => void;
 
-export type CloudSafetyBlockReason = 'no_deid_stage' | 'raw_image' | 'unsafe_text' | 'undeclared_egress';
+export type CloudSafetyBlockReason = 'no_deid_stage' | 'raw_image' | 'unsafe_text' | 'undeclared_egress' | 'no_meta';
 
 export type UndeclaredEgressMode = 'warn' | 'fail';
 export const DEFAULT_UNDECLARED_EGRESS: UndeclaredEgressMode = 'fail';
@@ -126,6 +128,15 @@ export function gateCloudStage(stage: Stage, input: StageData, deidCompleted: bo
     imageStripped = true;
   }
   return { input: out, decision: 'passed', imageStripped };
+}
+
+/**
+ * Pre-run, fully fail-closed: in 'fail' mode a stage without any `meta` cannot declare where it runs,
+ * so it must not run. Returns the refusal, or undefined when the stage may run.
+ */
+export function refuseUndeclaredStage(stage: Stage, policy: CloudSafetyPolicy = {}): CloudSafetyError | undefined {
+  if (stage.meta !== undefined || undeclaredEgressMode(stage, policy) !== 'fail') return undefined;
+  return new CloudSafetyError(stage.id, 'no_meta', `stage "${stage.id}" declares no meta, so it cannot say whether it sends data off the device; give it meta (e.g. defineStage or meta.runtime 'device' | 'cloud' | 'local-oss' | 'code'), exempt it, or use cloudSafety.undeclaredEgress 'warn'`);
 }
 
 /** Post-hoc: a stage that did not declare egress but reports data leaving the device. */
