@@ -81,3 +81,15 @@ describe('cloud baseline privacy receipt', () => {
     expect(run.steps.map((s) => s.stageId)).toEqual(['mock-nano-read', 'mock-nano-structure', 'deid', 'mock-cloud-verify']);
   });
 });
+
+describe('cloudSafetyForPipeline', () => {
+  it("exempts only the cloud-only baseline's cloud-read stage", () => {
+    const all = pipelines(DEFAULT_THRESHOLDS);
+    const cloud = all.find((p) => p.id === 'cloud-only');
+    const hybrid = all.find((p) => p.id === 'hybrid');
+    const device = all.find((p) => p.id === 'on-device-only');
+    expect(cloudSafetyForPipeline(cloud!)).toEqual({ exempt: ['cloud-read'] });
+    expect(cloudSafetyForPipeline(hybrid!)).toEqual({});
+    expect(cloudSafetyForPipeline(device!)).toEqual({});
+  });
+});

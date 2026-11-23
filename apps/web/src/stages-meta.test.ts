@@ -32,15 +32,12 @@ describe('every web stage declares egress', () => {
     });
   }
 
-  it('marks on-device and de-id stages as no egress, and text cloud stages as cloud', () => {
+  it('marks on-device and de-id stages as no egress, and cloud stages as cloud', () => {
     expect(egressOf(nanoRead)).toBe('none');
     expect(egressOf(nanoStructure)).toBe('none');
     expect(egressOf(deidStage)).toBe('none');
-    // Image baseline: must still run under a bare runPipeline (QA DEID-E2E-06c does
-    // not pass cloudSafety.exempt). runtime 'cloud' would trip core's raw-image pre-gate.
-    expect(cloudRead.meta).toBeDefined();
-    expect(egressOf(cloudRead)).toBe('none');
-    expect(egressOf(mockCloudRead)).toBe('none');
+    expect(egressOf(cloudRead)).toBe('cloud');
+    expect(egressOf(mockCloudRead)).toBe('cloud');
     expect(egressOf(cloudStructure)).toBe('cloud');
     expect(egressOf(hybridVerify(DEFAULT_THRESHOLDS))).toBe('cloud');
   });

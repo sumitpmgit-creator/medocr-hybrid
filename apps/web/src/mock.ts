@@ -37,7 +37,6 @@ import {
   CLOUD_BASELINE_PIPELINE_ID,
   IMAGE_EGRESS_NOTE_PREFIX,
   META_CLOUD_EGRESS,
-  META_CLOUD_IMAGE_BASELINE,
   META_NO_EGRESS,
   READ_PROMPT,
   STRUCTURE_PROMPT,
@@ -222,7 +221,7 @@ export const mockCloudRead: Stage = {
   name: `Mock ${CLOUD_MODEL} read (sends the page image)`,
   kind: 'ocr',
   accepts: ['image'],
-  meta: META_CLOUD_IMAGE_BASELINE,
+  meta: META_CLOUD_EGRESS,
   async run(input, ctx): Promise<StageResult> {
     if (input.kind !== 'image') throw new Error('image required');
     await delay();

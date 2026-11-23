@@ -64,14 +64,6 @@ export const DEMO_LANGUAGES = ['en'] as const;
 export const META_NO_EGRESS = { runtime: 'device' as const, sendsDataOffDevice: false };
 export const META_LOCAL_CODE = { runtime: 'device' as const, sendsDataOffDevice: false };
 export const META_CLOUD_EGRESS = { runtime: 'cloud' as const, sendsDataOffDevice: true };
-/**
- * `cloud-read` sends the page image (labelled IMAGE_EGRESS_BYTES). Core's pre-gate
- * refuses raw images when runtime is 'cloud' unless the caller passes
- * `cloudSafety: { exempt: ['cloud-read'] }`. Sage's QA/harness call runPipeline
- * without that policy, so this meta does not trip isEgressStage; main.ts and our
- * tests still pass the exemption. Text cloud stages use META_CLOUD_EGRESS.
- */
-export const META_CLOUD_IMAGE_BASELINE = { runtime: 'device' as const, sendsDataOffDevice: false };
 
 /** Verbatim transcription. Must not ask the model to redact PHI (CER/WER score this output). */
 export const READ_PROMPT = `Transcribe ALL text in this medical document image exactly as written, line by line, in reading order.
@@ -161,7 +153,7 @@ export function isCloudBaselineEnabled(opts: { source: PipelineSource; userEnabl
 }
 
 export const cloudRead: Stage = {
-  id: 'cloud-read', name: `${CLOUD_MODEL} read (cloud, sends the page image)`, kind: 'ocr', accepts: ['image'], meta: META_CLOUD_IMAGE_BASELINE,
+  id: 'cloud-read', name: `${CLOUD_MODEL} read (cloud, sends the page image)`, kind: 'ocr', accepts: ['image'], meta: META_CLOUD_EGRESS,
   async run(input, ctx): Promise<StageResult> {
     if (input.kind !== 'image') throw new Error('image required');
     const t0 = t();
